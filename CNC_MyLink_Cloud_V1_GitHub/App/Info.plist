@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+ <key>CFBundleIdentifier</key><string>sk.cncmylink.ipadmini</string>
+ <key>CFBundleExecutable</key><string>CNCMyLink</string>
+ <key>CFBundleName</key><string>CNC MyLink</string>
+ <key>CFBundleDisplayName</key><string>CNC MyLink</string>
+ <key>CFBundlePackageType</key><string>APPL</string>
+ <key>CFBundleVersion</key><string>1</string>
+ <key>CFBundleShortVersionString</key><string>1.0</string>
+ <key>LSRequiresIPhoneOS</key><true/>
+ <key>MinimumOSVersion</key><string>12.0</string>
+ <key>UIDeviceFamily</key><array><integer>2</integer></array>
+ <key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+ <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+ <key>UIStatusBarStyle</key><string>UIStatusBarStyleLightContent</string>
+ <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+</dict></plist>
