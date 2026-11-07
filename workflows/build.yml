@@ -1,0 +1,69 @@
+name: Build CNC MyLink iPad DEB
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'App/**'
+      - '.github/workflows/build.yml'
+jobs:
+  compile:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile for iOS 12 arm64 without local Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          mkdir -p stage/Applications/CNCMyLink.app
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -O2 \
+            -framework UIKit -framework Foundation \
+            -o stage/Applications/CNCMyLink.app/CNCMyLink App/main.m
+          cp App/Info.plist stage/Applications/CNCMyLink.app/Info.plist
+          echo 'Binary architecture:'
+          lipo -info stage/Applications/CNCMyLink.app/CNCMyLink
+      - name: Sign binary for jailbreak with ldid
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ldid
+          ldid -S stage/Applications/CNCMyLink.app/CNCMyLink
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-directory
+          path: stage/
+          include-hidden-files: true
+          retention-days: 7
+  package:
+    needs: compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-directory
+          path: stage
+      - name: Assemble rootful jailbreak DEB
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p stage/DEBIAN output
+          cat > stage/DEBIAN/control <<'CONTROL'
+          Package: sk.cncmylink.ipadmini
+          Name: CNC MyLink iPad
+          Version: 1.0-1
+          Architecture: iphoneos-arm
+          Description: Native CNC NUM1040 client for iPad mini 2 on iOS 12
+          Maintainer: CNC MyLink
+          Section: Applications
+          Priority: optional
+          Depends: firmware (>= 12.0)
+          CONTROL
+          chmod 755 stage/Applications/CNCMyLink.app/CNCMyLink
+          chmod 755 stage/Applications stage/Applications/CNCMyLink.app
+          dpkg-deb --build --root-owner-group stage output/CNC_MyLink_iPad_V1_rootful.deb
+          dpkg-deb --info output/*.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CNC_MyLink_iPad_V1_DEB
+          path: output/*.deb
+          retention-days: 30
