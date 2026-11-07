@@ -8,6 +8,7 @@ static UIColor *TCYAN(void){return [UIColor colorWithRed:.12 green:.85 blue:.80 
 static UIColor *TWHITE(void){return [UIColor colorWithWhite:.94 alpha:1];}
 static NSString *TString(id o){return [o isKindOfClass:NSString.class]?o:@"";}
 static double TNumber(id o,double fallback){double n=[o respondsToSelector:@selector(doubleValue)]?[o doubleValue]:fallback;return isfinite(n)?n:fallback;}
+static double TParse(NSString *str){NSString *v=[TString(str) stringByReplacingOccurrencesOfString:@"," withString:@"."];return [v doubleValue];}
 static NSArray *TDefs(NSString *kind){
  NSDictionary *all=@{
  @"diameter":@[@[@"zStart",@"Začiatok od čela Z (mm)",@0],@[@"zEnd",@"Koniec Z (mm)",@20],@[@"diameter",@"Výsledný priemer Ø (mm)",@30],@[@"step",@"Radiálny úber (mm)",@1]],
@@ -244,7 +245,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (void)fieldChanged {self.verified=NO;self.verifiedModel=nil;[self localPreview];}
 - (void)showError:(NSString *)e {self.status.text=e;UIAlertController *a=[UIAlertController alertControllerWithTitle:@"CNC MyLink" message:e preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:a animated:YES completion:nil];}
 - (BOOL)validFields {
- double d=self.diamField.text.doubleValue,l=self.lengthField.text.doubleValue,f=self.feedField.text.doubleValue,r=self.spindleField.text.doubleValue;
+ double d=TParse(self.diamField.text),l=TParse(self.lengthField.text),f=TParse(self.feedField.text),r=TParse(self.spindleField.text);
  if(!isfinite(d)||d<=0||d>1000||!isfinite(l)||l<=0||l>3000){[self showError:@"Priemer musí byť 1–1000 mm a dĺžka 1–3000 mm."];return NO;}
  if(!isfinite(f)||f<.005||f>2||!isfinite(r)||r<50||r>5000){[self showError:@"Rozsah editora: F 0.005–2 mm/ot, S 50–5000 ot/min. Toto NIE SÚ overené limity stroja."];return NO;}
  if(!self.nameField.text.length){[self showError:@"Zadaj názov návrhu."];return NO;}
@@ -252,8 +253,8 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 }
 - (NSDictionary *)projectWith:(NSArray *)ops {
  return @{@"version":@3,@"name":self.nameField.text?:@"O0001",
- @"stock":@{@"diameter":@([self.diamField.text doubleValue]),@"length":@([self.lengthField.text doubleValue])},
- @"technology":@{@"feed":@([self.feedField.text doubleValue]),@"spindle":@([self.spindleField.text doubleValue])},
+ @"stock":@{@"diameter":@(TParse(self.diamField.text)),@"length":@(TParse(self.lengthField.text))},
+ @"technology":@{@"feed":@(TParse(self.feedField.text)),@"spindle":@(TParse(self.spindleField.text))},
  @"operations":ops?:@[]};
 }
 - (void)request:(NSString *)path body:(NSDictionary *)body finished:(void (^)(NSDictionary *,NSError *))done {
