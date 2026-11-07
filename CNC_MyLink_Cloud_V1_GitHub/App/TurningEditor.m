@@ -122,6 +122,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  UILabel *heading=[self label:@"CNC MyLink iPad V1.3 • ALPHALINK EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
  self.status=[self label:@"NOVÝ NÁVRH • geometria bude overená Raspberry Pi"];self.status.tag=902;[self.view addSubview:self.status];
  self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"ZADANIE",@"OPERÁCIE",@"2D NÁHĽAD",@"G-KÓD",@"NÁVRHY"]];self.tabs.selectedSegmentIndex=0;
+ [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
  [self.tabs addTarget:self action:@selector(switchTab) forControlEvents:UIControlEventValueChanged];[self.view addSubview:self.tabs];
  self.inputPage=[UIView new];self.operationPage=[UIView new];self.previewPage=[UIView new];self.codePage=[UIView new];self.projectsPage=[UIView new];
  for(UIView *v in @[self.inputPage,self.operationPage,self.previewPage,self.codePage,self.projectsPage]){v.backgroundColor=TBG();[self.view addSubview:v];}
