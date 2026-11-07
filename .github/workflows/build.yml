@@ -17,7 +17,7 @@ jobs:
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           mkdir -p stage/Applications/CNCMyLink.app
           xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -O2 \
-            -framework UIKit -framework Foundation \
+            -framework UIKit -framework Foundation -framework CoreGraphics \
             -o stage/Applications/CNCMyLink.app/CNCMyLink CNC_MyLink_Cloud_V1_GitHub/App/main.m
           cp CNC_MyLink_Cloud_V1_GitHub/App/Info.plist stage/Applications/CNCMyLink.app/Info.plist
           echo 'Binary architecture:'
