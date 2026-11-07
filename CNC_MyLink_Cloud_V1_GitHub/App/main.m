@@ -9,6 +9,9 @@
 @property(nonatomic,copy) NSString *selected;
 @property(nonatomic,assign) BOOL dirty;
 @property(nonatomic,strong) UISegmentedControl *tabs;
+@property(nonatomic,assign) NSInteger machineMode; // 0=offline, 1=NUM1040, 2=AlphaLink
+@property(nonatomic,copy) NSString *connectedBase;
+@property(nonatomic,copy) NSString *editorOriginal;
 @end
 
 @implementation CNCController
@@ -18,8 +21,8 @@
 - (UIButton *)button:(NSString *)name action:(SEL)sel {
  UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; [b setTitle:name forState:UIControlStateNormal]; b.backgroundColor=self.panel; [b setTitleColor:self.cyan forState:UIControlStateNormal]; b.layer.cornerRadius=9; b.titleLabel.font=[UIFont boldSystemFontOfSize:14]; [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside]; return b;
 }
-- (void)viewDidLoad { [super viewDidLoad]; self.view.backgroundColor=self.bg; self.files=[NSMutableArray array];
- UILabel *title=[UILabel new]; title.text=@"CNC MyLink • iPad V1.1"; title.textColor=self.cyan; title.font=[UIFont boldSystemFontOfSize:23]; title.frame=CGRectMake(16,22,500,30); [self.view addSubview:title];
+- (void)viewDidLoad { [super viewDidLoad]; self.view.backgroundColor=self.bg; self.files=[NSMutableArray array]; self.machineMode=0;
+ UILabel *title=[UILabel new]; title.text=@"CNC MyLink • iPad V1.2"; title.textColor=self.cyan; title.font=[UIFont boldSystemFontOfSize:23]; title.frame=CGRectMake(16,22,500,30); [self.view addSubview:title];
  self.address=[[UITextField alloc] initWithFrame:CGRectZero]; self.address.textColor=[UIColor whiteColor]; self.address.backgroundColor=self.panel; self.address.layer.cornerRadius=8; self.address.font=[UIFont systemFontOfSize:15]; self.address.autocapitalizationType=UITextAutocapitalizationTypeNone; self.address.autocorrectionType=UITextAutocorrectionTypeNo; self.address.keyboardType=UIKeyboardTypeURL;
  self.address.text=[[NSUserDefaults standardUserDefaults] stringForKey:@"pi-url"]?:@"http://192.168.0.169:8080"; [self.view addSubview:self.address];
  UIButton *connect=[self button:@"PRIPOJIŤ" action:@selector(checkConnection)]; connect.tag=11; [self.view addSubview:connect];
@@ -76,50 +79,190 @@
  NSString *details=[NSString stringWithFormat:@"Adresa: %@\n%@\n%@\nSkontroluj zapnutie Raspberry Pi, jeho aktuálnu IP adresu a spoločnú lokálnu sieť.",[self base],explanation,error?[NSString stringWithFormat:@"Chyba: %@ (%ld)",error.domain,(long)error.code]:@"Odpoveď nezodpovedá NUM1040 API."];
  [self alert:details];
 }
-- (void)checkConnection {
- self.address.text=[self base];
- [self.view endEditing:YES];
- [[NSUserDefaults standardUserDefaults] setObject:[self base] forKey:@"pi-url"];
- self.status.text=@"Kontrolujem pripojenie a API NUM1040...";
- [self request:@"GET" path:@"/api/info" body:nil done:^(NSDictionary *j,NSError *e){
-   if(!e && [j[@"ok"] boolValue]) {
-     self.status.text=[NSString stringWithFormat:@"Raspberry Pi ONLINE • NUM %@",[j[@"connected"] boolValue]?@"PRIPOJENÉ":@"ODPOJENÉ"];
-     [self refreshFiles]; return;
-   }
-   if(!e) {
-     self.status.text=@"SERVER ONLINE • iné alebo neúplné API";
-     [self alert:[NSString stringWithFormat:@"Server na %@ odpovedá, ale neposkytuje očakávané NUM1040 API (/api/info).\nToto môže byť server AlphaLink. Jeho API sa líši a režim NUM1040 na ňom nemožno používať.",[self base]]]; return;
-   }
-   if(![e.domain isEqualToString:@"HTTP"]) {
-     self.status.text=[NSString stringWithFormat:@"SPOJENIE ZLYHALO • %@ (%ld)",e.domain,(long)e.code];
-     [self failure:j error:e]; return;
-   }
-   // HTTP error proves the host answered, but may be serving another application.
-   [self request:@"GET" path:@"/" body:nil done:^(NSDictionary *root,NSError *rootError){
-     if(!rootError || [rootError.domain isEqualToString:@"HTTP"]) {
-       self.status.text=@"SERVER ONLINE • NUM1040 API nenájdené";
-       [self alert:[NSString stringWithFormat:@"Server %@ je dostupný, ale endpoint /api/info vrátil HTTP %ld.\nSkontroluj, či používaš Raspberry Pi pre NUM1040 a správny port (zvyčajne 8080). AlphaLink na 8081 nemusí mať toto API.",[self base],(long)e.code]];
-     } else {
-       self.status.text=@"CHYBA KOMUNIKÁCIE";
-       [self failure:j error:e];
-     }
-   }];
+- (BOOL)isReady {
+ if(self.machineMode==0 || ![self.connectedBase isEqualToString:[self base]]) {
+  [self alert:@"Najprv stlač PRIPOJIŤ, aby sa overil typ servera. Po zmene adresy je potrebné nové pripojenie."];
+  return NO;
+ }
+ return YES;
+}
+- (void)applyMode:(NSInteger)mode info:(NSDictionary *)info {
+ self.machineMode=mode;
+ self.connectedBase=[self base];
+ self.selected=nil; self.editorOriginal=nil; self.editor.text=@""; self.dirty=NO;
+ [self.files removeAllObjects]; [self.table reloadData];
+ UIButton *send=(UIButton *)[self.view viewWithTag:103];
+ UIButton *receive=(UIButton *)[self.view viewWithTag:104];
+ [send setTitle:(mode==2?@"DO ALPHA":@"DO NUM") forState:UIControlStateNormal];
+ [receive setTitle:(mode==2?@"Z ALPHA":@"Z NUM") forState:UIControlStateNormal];
+ if(mode==1) {
+  self.status.text=[NSString stringWithFormat:@"NUM 1040 • PI ONLINE • stroj %@",[info[@"connected"] boolValue]?@"PRIPOJENÝ":@"ODPOJENÝ"];
+ } else {
+  self.status.text=@"ALPHALINK • server ONLINE • Harrison Alpha 400";
+ }
+ [self refreshFiles];
+}
+- (void)checkAlphaLinkAfterNUM:(NSError *)numError {
+ self.status.text=@"Kontrolujem AlphaLink API...";
+ [self request:@"GET" path:@"/api/status" body:nil done:^(NSDictionary *j,NSError *e){
+  BOOL alpha=(!e && [j isKindOfClass:NSDictionary.class] &&
+    (j[@"transfer"] || j[@"serial_port"] || j[@"program_count"] || j[@"ports"]));
+  if(alpha) { [self applyMode:2 info:j]; return; }
+  self.machineMode=0; self.connectedBase=nil;
+  if(e && ![e.domain isEqualToString:@"HTTP"]){self.status.text=@"SERVER NEDOSTUPNÝ";[self failure:j error:e];return;}
+  self.status.text=@"SERVER ONLINE • neznáme API";
+  [self alert:[NSString stringWithFormat:@"Server %@ odpovedá, ale nepodarilo sa potvrdiť API NUM1040 ani AlphaLink.\nNUM /api/info: %@.\nAlphaLink /api/status: %@.\nPrenos do CNC je z bezpečnostných dôvodov zablokovaný.",[self base],[self networkExplanation:numError],[self networkExplanation:e]]];
  }];
 }
-- (void)refreshFiles { [self request:@"GET" path:@"/api/files" body:nil done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;} NSArray *a=[j[@"files"] isKindOfClass:NSArray.class]?j[@"files"]:@[];self.files=[a mutableCopy];[self.table reloadData]; self.status.text=[NSString stringWithFormat:@"Na Raspberry Pi: %lu programov",(unsigned long)a.count];}]; }
+- (void)checkConnection {
+ if(self.dirty){[self alert:@"V editore sú neuložené zmeny. Pred zmenou pripojenia ich ulož."];return;}
+ self.address.text=[self base]; [self.view endEditing:YES];
+ [[NSUserDefaults standardUserDefaults] setObject:[self base] forKey:@"pi-url"];
+ self.machineMode=0; self.connectedBase=nil;
+ self.status.text=@"Kontrolujem NUM 1040 API...";
+ [self request:@"GET" path:@"/api/info" body:nil done:^(NSDictionary *j,NSError *e){
+  if(!e && [j[@"ok"] boolValue]) { [self applyMode:1 info:j]; return; }
+  if(e && ![e.domain isEqualToString:@"HTTP"]) {
+   self.status.text=@"Raspberry Pi: OFFLINE"; [self failure:j error:e]; return;
+  }
+  [self checkAlphaLinkAfterNUM:e];
+ }];
+}
+- (void)refreshFiles {
+ if(![self isReady])return;
+ NSInteger mode=self.machineMode;
+ [self request:@"GET" path:@"/api/files" body:nil done:^(NSDictionary *j,NSError *e){
+  if(e || ![j isKindOfClass:NSDictionary.class] || (mode==1 && ![j[@"ok"] boolValue])) {
+    [self failure:j error:e]; return;
+  }
+  NSArray *a=[j[@"files"] isKindOfClass:NSArray.class]?j[@"files"]:@[];
+  NSMutableArray *valid=[NSMutableArray array];
+  for(id item in a) {
+    if(![item isKindOfClass:NSDictionary.class])continue;
+    NSString *name=[item[@"name"] isKindOfClass:NSString.class]?item[@"name"]:@"";
+    if(mode==2 && ![[name lowercaseString] hasSuffix:@".600"])continue;
+    if(name.length)[valid addObject:item];
+  }
+  self.files=valid; [self.table reloadData];
+  self.status.text=[NSString stringWithFormat:@"%@ • %lu programov na Raspberry Pi",mode==2?@"ALPHALINK":@"NUM 1040",(unsigned long)valid.count];
+ }];
+}
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{return self.files.count;}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {UITableViewCell *c=[tableView dequeueReusableCellWithIdentifier:@"file"];if(!c)c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"file"];NSDictionary *f=self.files[p.row];NSString *n=f[@"name"]?:@"?";c.textLabel.text=n;c.textLabel.textColor=[UIColor whiteColor]; c.detailTextLabel.text=[NSString stringWithFormat:@"%@ bytes",f[@"size"]?:@0];c.detailTextLabel.textColor=[UIColor lightGrayColor];c.backgroundColor=[n isEqualToString:self.selected]?[UIColor colorWithRed:.05 green:.25 blue:.29 alpha:1]:self.bg;return c;}
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)p {self.selected=self.files[p.row][@"name"];[self.table reloadData];}
 - (NSString *)encodedName {NSMutableCharacterSet *safe=[[NSCharacterSet URLQueryAllowedCharacterSet] mutableCopy]; [safe removeCharactersInString:@"&=+#?/"]; return [self.selected stringByAddingPercentEncodingWithAllowedCharacters:safe];}
-- (void)openSelected { if(!self.selected.length){[self alert:@"Najprv vyber program zo zoznamu."];return;} if(self.dirty){[self alert:@"V editore sú neuložené zmeny. Pred otvorením ďalšieho súboru ich ulož."];return;}
- NSString *name=self.selected; [self request:@"GET" path:[@"/api/file?name=" stringByAppendingString:[self encodedName]] body:nil done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;}self.selected=j[@"name"]?:name;self.editor.text=j[@"content"]?:@"";self.dirty=NO;self.tabs.selectedSegmentIndex=1;[self updateTabs];self.status.text=[@"Editor: " stringByAppendingString:self.selected];}]; }
+- (void)openSelected {
+ if(![self isReady])return;
+ if(!self.selected.length){[self alert:@"Najprv vyber program zo zoznamu."];return;}
+ if(self.dirty){[self alert:@"V editore sú neuložené zmeny. Najprv ich ulož."];return;}
+ NSInteger mode=self.machineMode; NSString *name=self.selected;
+ [self request:@"GET" path:[@"/api/file?name=" stringByAppendingString:[self encodedName]] body:nil done:^(NSDictionary *j,NSError *e){
+  if(e || ![j isKindOfClass:NSDictionary.class] || (mode==1 && ![j[@"ok"] boolValue])) {[self failure:j error:e];return;}
+  id raw=(mode==2?j[@"text"]:j[@"content"]);
+  if(![raw isKindOfClass:NSString.class]){
+   [self alert:@"Server nevrátil text programu v očakávanom formáte. Súbor sa neotvoril."];return;
+  }
+  self.editorOriginal=name;
+  self.editor.text=(NSString *)raw; self.dirty=NO;
+  self.tabs.selectedSegmentIndex=1;[self updateTabs];
+  self.status.text=[NSString stringWithFormat:@"%@ • editor: %@",mode==2?@"ALPHALINK":@"NUM 1040",name];
+ }];
+}
 - (void)textViewDidChange:(UITextView *)v { self.dirty=YES; }
-- (void)saveEditor {if(!self.selected.length){[self alert:@"Najprv otvor program."];return;} [self request:@"POST" path:@"/api/file/save" body:@{@"name":self.selected,@"content":self.editor.text?:@"",@"overwrite":@YES} done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;}self.dirty=NO;self.status.text=@"Zmeny uložené na Raspberry Pi";[self refreshFiles];}];}
-- (void)sendSelected {if(!self.selected.length){[self alert:@"Vyber program na Raspberry Pi."];return;}if(self.dirty){[self alert:@"Neuložené zmeny v editore. Najprv ich ulož."];return;}
- UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Odoslať do NUM 1040?" message:[NSString stringWithFormat:@"Program: %@\nNa stroji musí byť pripravený režim LOAD / IN CYC. Prenos vykoná Raspberry Pi.",self.selected] preferredStyle:UIAlertControllerStyleAlert];[a addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];[a addAction:[UIAlertAction actionWithTitle:@"ODOSLAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){[self request:@"POST" path:@"/api/cnc/send" body:@{@"name":self.selected} done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;}self.status.text=@"Prenos do NUM spustený";[self pollJob];}];}]];[self presentViewController:a animated:YES completion:nil]; }
-- (void)receiveProgram {UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Prijať z NUM" message:@"Zadaj názov pre prijatý program." preferredStyle:UIAlertControllerStyleAlert];[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"PRIJATY.NC";f.text=@"PRIJATY.NC";}];[a addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];[a addAction:[UIAlertAction actionWithTitle:@"PRIJAŤ" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){NSString *name=a.textFields.firstObject.text?:@"";[self request:@"POST" path:@"/api/cnc/receive" body:@{@"name":name} done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;}self.status.text=@"Čakám na program z NUM";[self pollJob];}];}]];[self presentViewController:a animated:YES completion:nil];}
-- (void)stopTransfer {[self request:@"POST" path:@"/api/cnc/stop" body:nil done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;}self.status.text=@"STOP požiadavka odoslaná";}];}
-- (void)pollJob { [self request:@"GET" path:@"/api/job" body:nil done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue])return;NSDictionary *job=j[@"job"];if(![job isKindOfClass:NSDictionary.class])return; NSString *state=job[@"state"]?:@"?";self.status.text=[NSString stringWithFormat:@"%@ • %@%% • %@",state,job[@"progress"]?:@0,job[@"message"]?:@""];if([@[@"running",@"pending",@"waiting",@"receiving",@"sending"] containsObject:[state lowercaseString]])dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{[self pollJob];});else [self refreshFiles];}];}
+- (void)saveEditor {
+ if(![self isReady])return;
+ if(!self.selected.length || !self.editorOriginal.length){[self alert:@"Najprv otvor program zo zoznamu."];return;}
+ if(![self.selected isEqualToString:self.editorOriginal]){[self alert:@"Vybraný program sa zmenil. Znovu ho otvor, aby sa nepremenoval nesprávny súbor."];return;}
+ NSInteger mode=self.machineMode;
+ if(mode==2 && ![[self.selected lowercaseString] hasSuffix:@".600"]) {
+  [self alert:@"AlphaLink CAM ukladá v tomto režime iba programy .600."];return;
+ }
+ NSDictionary *body=(mode==2?@{@"name":self.selected,@"text":self.editor.text?:@""}:@{@"name":self.selected,@"content":self.editor.text?:@"",@"overwrite":@YES});
+ NSString *path=(mode==2?@"/api/save":@"/api/file/save");
+ [self request:@"POST" path:path body:body done:^(NSDictionary *j,NSError *e) {
+  if(e || (mode==1 && ![j[@"ok"] boolValue])) {[self failure:j error:e];return;}
+  self.dirty=NO;
+  self.status.text=[NSString stringWithFormat:@"%@ • program uložený",mode==2?@"ALPHALINK":@"NUM 1040"];
+  [self refreshFiles];
+ }];
+}
+- (void)sendSelected {
+ if(![self isReady])return;
+ if(!self.selected.length){[self alert:@"Vyber program na Raspberry Pi."];return;}
+ if(self.dirty){[self alert:@"Neuložené zmeny v editore. Najprv ich ulož."];return;}
+ NSInteger mode=self.machineMode; NSString *name=[self.selected copy];
+ if(mode==2 && ![[name lowercaseString] hasSuffix:@".600"]) {
+   [self alert:@"Do AlphaLink CAM možno odoslať iba overený .600 program. ISO .nc používa iný režim READ a nie je v tejto verzii podporovaný."];return;
+ }
+ NSString *prompt=(mode==2?@"ALPHA 400: na stroji nastav CAM → LOAD CAM FILE. Pred odoslaním skontroluj program .600 a pracovné podmienky.":@"NUM 1040: priprav na stroji LOAD / IN CYC. Pred odoslaním skontroluj G-kód.");
+ UIAlertController *a=[UIAlertController alertControllerWithTitle:(mode==2?@"Odoslať do Harrison Alpha 400?":@"Odoslať do NUM 1040?")
+ message:[NSString stringWithFormat:@"Program: %@\n%@\nPrenos vykoná Raspberry Pi.",name,prompt] preferredStyle:UIAlertControllerStyleAlert];
+ [a addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ [a addAction:[UIAlertAction actionWithTitle:@"ODOSLAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+   if(![self isReady] || self.machineMode!=mode || ![self.selected isEqualToString:name])return;
+   NSString *path=(mode==2?@"/api/send":@"/api/cnc/send");
+   NSDictionary *body=(mode==2?@{@"name":name,@"force":@NO}:@{@"name":name});
+   [self request:@"POST" path:path body:body done:^(NSDictionary *j,NSError *e){
+    if(e || (mode==1 && ![j[@"ok"] boolValue])) {
+      if(mode==2 && [e.domain isEqualToString:@"HTTP"] && e.code==409) {
+        [self alert:@"AlphaLink odmietol prenos pri validácii (HTTP 409). Oprav program v editore. Neoverený RAW prenos nie je povolený."];
+      }else [self failure:j error:e];
+      return;
+    }
+    self.status.text=[NSString stringWithFormat:@"%@ • prenos spustený",mode==2?@"ALPHALINK":@"NUM 1040"];
+    [self pollJob];
+   }];
+ }];
+ [self presentViewController:a animated:YES completion:nil];
+}
+- (void)receiveProgram {
+ if(![self isReady])return;
+ NSInteger mode=self.machineMode;
+ UIAlertController *a=[UIAlertController alertControllerWithTitle:(mode==2?@"Prijať z Alpha 400?":@"Prijať z NUM 1040?")
+ message:(mode==2?@"Na stroji priprav odoslanie programu PUNCH. Raspberry Pi bude čakať na dáta.":@"Zadaj názov pre prijatý program.")
+ preferredStyle:UIAlertControllerStyleAlert];
+ if(mode==1)[a addTextFieldWithConfigurationHandler:^(UITextField *f){f.placeholder=@"PRIJATY.NC";f.text=@"PRIJATY.NC";}];
+ [a addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ [a addAction:[UIAlertAction actionWithTitle:@"PRIJAŤ" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act){
+   if(![self isReady] || self.machineMode!=mode)return;
+   NSString *path=(mode==2?@"/api/receive":@"/api/cnc/receive");
+   NSDictionary *body=(mode==2?nil:@{@"name":a.textFields.firstObject.text?:@""});
+   [self request:@"POST" path:path body:body done:^(NSDictionary *j,NSError *e) {
+     if(e || (mode==1 && ![j[@"ok"] boolValue])){[self failure:j error:e];return;}
+     self.status.text=@"Čakám na program zo stroja";
+     [self pollJob];
+   }];
+ }];
+ [self presentViewController:a animated:YES completion:nil];
+}
+- (void)stopTransfer {
+ if(![self isReady])return;
+ NSInteger mode=self.machineMode;
+ [self request:@"POST" path:(mode==2?@"/api/cancel":@"/api/cnc/stop") body:nil done:^(NSDictionary *j,NSError *e){
+  if(e || (mode==1 && ![j[@"ok"] boolValue])){[self failure:j error:e];return;}
+  self.status.text=@"Požiadavka STOP bola odoslaná";[self refreshFiles];
+ }];
+}
+- (void)pollJob {
+ if(![self isReady])return;
+ NSInteger mode=self.machineMode;
+ [self request:@"GET" path:(mode==2?@"/api/status":@"/api/job") body:nil done:^(NSDictionary *j,NSError *e){
+  if(e || ![j isKindOfClass:NSDictionary.class]){[self failure:j error:e];return;}
+  NSDictionary *job=(mode==2?j[@"transfer"]:j[@"job"]);
+  if(![job isKindOfClass:NSDictionary.class]){self.status.text=@"Server nevrátil stav prenosu.";return;}
+  NSString *message=[job[@"message"] isKindOfClass:NSString.class]?job[@"message"]:@"";
+  id progress=job[@"progress"]?:@0;
+  BOOL active=NO;
+  if(mode==2)active=[job[@"sending"] boolValue] || [job[@"receiving"] boolValue];
+  else {
+   NSString *state=[job[@"state"] isKindOfClass:NSString.class]?job[@"state"]:@"idle";
+   active=[@[@"running",@"pending",@"waiting",@"receiving",@"sending"] containsObject:state.lowercaseString];
+  }
+  self.status.text=[NSString stringWithFormat:@"%@ • %@%% • %@",mode==2?@"ALPHALINK":@"NUM 1040",progress,message];
+  if(active)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{if(self.machineMode==mode)[self pollJob];});
+  else [self refreshFiles];
+ }];
+}
 @end
 
 @interface CNCAppDelegate : UIResponder <UIApplicationDelegate>

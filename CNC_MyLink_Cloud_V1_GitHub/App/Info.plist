@@ -6,8 +6,8 @@
  <key>CFBundleName</key><string>CNC MyLink</string>
  <key>CFBundleDisplayName</key><string>CNC MyLink</string>
  <key>CFBundlePackageType</key><string>APPL</string>
- <key>CFBundleVersion</key><string>2</string>
- <key>CFBundleShortVersionString</key><string>1.1</string>
+ <key>CFBundleVersion</key><string>3</string>
+ <key>CFBundleShortVersionString</key><string>1.2</string>
  <key>LSRequiresIPhoneOS</key><true/>
  <key>MinimumOSVersion</key><string>12.0</string>
  <key>UIDeviceFamily</key><array><integer>2</integer></array>
