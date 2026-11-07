@@ -212,7 +212,7 @@
     self.status.text=[NSString stringWithFormat:@"%@ • prenos spustený",mode==2?@"ALPHALINK":@"NUM 1040"];
     [self pollJob];
    }];
- }];
+ }]];
  [self presentViewController:a animated:YES completion:nil];
 }
 - (void)receiveProgram {
@@ -232,7 +232,7 @@
      self.status.text=@"Čakám na program zo stroja";
      [self pollJob];
    }];
- }];
+ }]];
  [self presentViewController:a animated:YES completion:nil];
 }
 - (void)stopTransfer {
