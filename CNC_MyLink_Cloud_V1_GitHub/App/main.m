@@ -19,11 +19,11 @@
  UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; [b setTitle:name forState:UIControlStateNormal]; b.backgroundColor=self.panel; [b setTitleColor:self.cyan forState:UIControlStateNormal]; b.layer.cornerRadius=9; b.titleLabel.font=[UIFont boldSystemFontOfSize:14]; [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside]; return b;
 }
 - (void)viewDidLoad { [super viewDidLoad]; self.view.backgroundColor=self.bg; self.files=[NSMutableArray array];
- UILabel *title=[UILabel new]; title.text=@"CNC MyLink • iPad V1"; title.textColor=self.cyan; title.font=[UIFont boldSystemFontOfSize:23]; title.frame=CGRectMake(16,22,500,30); [self.view addSubview:title];
+ UILabel *title=[UILabel new]; title.text=@"CNC MyLink • iPad V1.1"; title.textColor=self.cyan; title.font=[UIFont boldSystemFontOfSize:23]; title.frame=CGRectMake(16,22,500,30); [self.view addSubview:title];
  self.address=[[UITextField alloc] initWithFrame:CGRectZero]; self.address.textColor=[UIColor whiteColor]; self.address.backgroundColor=self.panel; self.address.layer.cornerRadius=8; self.address.font=[UIFont systemFontOfSize:15]; self.address.autocapitalizationType=UITextAutocapitalizationTypeNone; self.address.autocorrectionType=UITextAutocorrectionTypeNo; self.address.keyboardType=UIKeyboardTypeURL;
  self.address.text=[[NSUserDefaults standardUserDefaults] stringForKey:@"pi-url"]?:@"http://192.168.0.169:8080"; [self.view addSubview:self.address];
  UIButton *connect=[self button:@"PRIPOJIŤ" action:@selector(checkConnection)]; connect.tag=11; [self.view addSubview:connect];
- self.status=[UILabel new]; self.status.text=@"Odpojené • pripravené na skúšku"; self.status.font=[UIFont systemFontOfSize:13]; self.status.textColor=[UIColor colorWithWhite:.8 alpha:1]; self.status.numberOfLines=2; [self.view addSubview:self.status];
+ self.status=[UILabel new]; self.status.text=@"Odpojené • pripravené na skúšku"; self.status.font=[UIFont systemFontOfSize:13]; self.status.textColor=[UIColor colorWithWhite:.8 alpha:1]; self.status.numberOfLines=3; [self.view addSubview:self.status];
  self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"PROGRAMY",@"EDITOR"]]; self.tabs.selectedSegmentIndex=0; [self.tabs addTarget:self action:@selector(updateTabs) forControlEvents:UIControlEventValueChanged]; [self.view addSubview:self.tabs];
  self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain]; self.table.backgroundColor=self.bg; self.table.dataSource=self; self.table.delegate=self; self.table.rowHeight=54; self.table.separatorColor=self.panel; [self.view addSubview:self.table];
  self.editor=[[UITextView alloc] initWithFrame:CGRectZero]; self.editor.backgroundColor=[UIColor colorWithRed:.015 green:.04 blue:.055 alpha:1]; self.editor.textColor=[UIColor whiteColor]; self.editor.font=[UIFont fontWithName:@"Menlo" size:15]?:[UIFont monospacedDigitSystemFontOfSize:15 weight:UIFontWeightRegular]; self.editor.autocapitalizationType=UITextAutocapitalizationTypeNone; self.editor.autocorrectionType=UITextAutocorrectionTypeNo; self.editor.delegate=self; [self.view addSubview:self.editor];
@@ -37,19 +37,19 @@
  CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height;
  CGFloat top= self.view.safeAreaInsets.top; CGFloat bottom=self.view.safeAreaInsets.bottom;
  UIView *conn=[self.view viewWithTag:11]; self.address.frame=CGRectMake(16,top+58,w-156,42); conn.frame=CGRectMake(w-132,top+58,116,42);
- self.status.frame=CGRectMake(16,top+108,w-32,38); self.tabs.frame=CGRectMake(16,top+151,w-32,38);
+ self.status.frame=CGRectMake(16,top+106,w-32,56); self.tabs.frame=CGRectMake(16,top+168,w-32,38);
  CGFloat footer=h-bottom-65, space=(w-32-5*8)/6.0;
  for (NSInteger i=0;i<6;i++){ UIView *b=[self.view viewWithTag:100+i]; b.frame=CGRectMake(16+i*(space+8),footer,space,50); }
- CGRect content=CGRectMake(16,top+202,w-32,MAX(100,footer-(top+210)));
+ CGRect content=CGRectMake(16,top+213,w-32,MAX(100,footer-(top+221)));
  self.table.frame=content; self.editor.frame=content;
 }
 - (void)updateTabs { BOOL e=self.tabs.selectedSegmentIndex==1; self.table.hidden=e; self.editor.hidden=!e; }
 - (void)alert:(NSString *)message { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"CNC MyLink" message:message preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]]; [self presentViewController:a animated:YES completion:nil]; }
-- (NSString *)base { NSString *v=[self.address.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; while([v hasSuffix:@"/"])v=[v substringToIndex:v.length-1]; return v; }
+- (NSString *)base { NSString *v=[self.address.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; if(v.length && [v rangeOfString:@"://"].location==NSNotFound) v=[@"http://" stringByAppendingString:v]; while([v hasSuffix:@"/"])v=[v substringToIndex:v.length-1]; return v; }
 - (void)request:(NSString *)method path:(NSString *)path body:(NSDictionary *)body done:(void (^)(NSDictionary *,NSError *))done {
  NSString *base=[self base]; NSURLComponents *parts=[NSURLComponents componentsWithString:base];
- if (!parts || ![@[@"http",@"https"] containsObject:parts.scheme] || !parts.host.length || parts.user || parts.password || parts.query || parts.fragment || (parts.path.length && ![parts.path isEqualToString:@"/"])) { [self alert:@"Zadaj presnú adresu Raspberry Pi, napríklad http://192.168.0.169:8080"]; return; }
- NSURL *url=[NSURL URLWithString:[base stringByAppendingString:path]]; if(!url){ [self alert:@"Neplatná adresa Raspberry Pi"]; return; }
+ if (!parts || ![@[@"http",@"https"] containsObject:parts.scheme] || !parts.host.length || parts.user || parts.password || parts.query || parts.fragment || (parts.path.length && ![parts.path isEqualToString:@"/"])) { done(nil,[NSError errorWithDomain:@"CNCMyLink" code:1 userInfo:@{NSLocalizedDescriptionKey:@"Neplatná adresa. Príklad: http://192.168.0.169:8080"}]); return; }
+ NSURL *url=[NSURL URLWithString:[base stringByAppendingString:path]]; if(!url){ done(nil,[NSError errorWithDomain:@"CNCMyLink" code:2 userInfo:@{NSLocalizedDescriptionKey:@"Neplatná adresa Raspberry Pi"}]); return; }
  NSMutableURLRequest *req=[NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:15]; req.HTTPMethod=method;
  if(body){ req.HTTPBody=[NSJSONSerialization dataWithJSONObject:body options:0 error:nil]; [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"]; }
  [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data,NSURLResponse *resp,NSError *err){
@@ -58,9 +58,54 @@
   dispatch_async(dispatch_get_main_queue(),^{ done(json,err); });
  }] resume];
 }
-- (void)failure:(NSDictionary *)json error:(NSError *)error { NSString *s=[json[@"error"] isKindOfClass:NSString.class]?json[@"error"]:error.localizedDescription; [self alert:s?:@"Raspberry Pi neodpovedá."]; }
-- (void)checkConnection { [[NSUserDefaults standardUserDefaults] setObject:[self base] forKey:@"pi-url"];
- [self request:@"GET" path:@"/api/info" body:nil done:^(NSDictionary *j,NSError *e){ if(e||![j[@"ok"] boolValue]){self.status.text=@"Raspberry Pi: OFFLINE";[self failure:j error:e];return;} self.status.text=[NSString stringWithFormat:@"Raspberry Pi ONLINE • NUM %@",[j[@"connected"] boolValue]?@"PRIPOJENÉ":@"ODPOJENÉ"];[self refreshFiles]; }]; }
+- (NSString *)networkExplanation:(NSError *)e {
+ if(!e) return @"Server nevrátil očakávané údaje.";
+ if([e.domain isEqualToString:NSURLErrorDomain]) {
+   if(e.code==NSURLErrorCannotFindHost) return @"Názov hostiteľa sa nepodarilo nájsť (DNS/mDNS). Skús IP adresu Raspberry Pi namiesto .local.";
+   if(e.code==NSURLErrorCannotConnectToHost) return @"Hostiteľ odmietol spojenie. Raspberry Pi môže byť vypnuté, služba nebeží alebo je nesprávny port.";
+   if(e.code==NSURLErrorTimedOut) return @"Časový limit. Skontroluj, či je iPad v rovnakej Wi-Fi/LAN sieti ako Raspberry Pi a či IP adresa stále platí.";
+   if(e.code==NSURLErrorNotConnectedToInternet || e.code==NSURLErrorNetworkConnectionLost) return @"Sieťové pripojenie nie je dostupné. Skontroluj Wi-Fi.";
+   if(e.code==NSURLErrorAppTransportSecurityRequiresSecureConnection) return @"iOS zablokoval HTTP spojenie (ATS).";
+ }
+ if([e.domain isEqualToString:@"HTTP"]) return [NSString stringWithFormat:@"HTTP %ld: server odpovedal, ale požadovanú cestu odmietol.",(long)e.code];
+ return e.localizedDescription?:@"Spojenie sa nepodarilo.";
+}
+- (void)failure:(NSDictionary *)json error:(NSError *)error {
+ NSString *serverError=[json[@"error"] isKindOfClass:NSString.class]?json[@"error"]:nil;
+ NSString *explanation=serverError?:[self networkExplanation:error];
+ NSString *details=[NSString stringWithFormat:@"Adresa: %@\n%@\n%@\nSkontroluj zapnutie Raspberry Pi, jeho aktuálnu IP adresu a spoločnú lokálnu sieť.",[self base],explanation,error?[NSString stringWithFormat:@"Chyba: %@ (%ld)",error.domain,(long)error.code]:@"Odpoveď nezodpovedá NUM1040 API."];
+ [self alert:details];
+}
+- (void)checkConnection {
+ self.address.text=[self base];
+ [self.view endEditing:YES];
+ [[NSUserDefaults standardUserDefaults] setObject:[self base] forKey:@"pi-url"];
+ self.status.text=@"Kontrolujem pripojenie a API NUM1040...";
+ [self request:@"GET" path:@"/api/info" body:nil done:^(NSDictionary *j,NSError *e){
+   if(!e && [j[@"ok"] boolValue]) {
+     self.status.text=[NSString stringWithFormat:@"Raspberry Pi ONLINE • NUM %@",[j[@"connected"] boolValue]?@"PRIPOJENÉ":@"ODPOJENÉ"];
+     [self refreshFiles]; return;
+   }
+   if(!e) {
+     self.status.text=@"SERVER ONLINE • iné alebo neúplné API";
+     [self alert:[NSString stringWithFormat:@"Server na %@ odpovedá, ale neposkytuje očakávané NUM1040 API (/api/info).\nToto môže byť server AlphaLink. Jeho API sa líši a režim NUM1040 na ňom nemožno používať.",[self base]]]; return;
+   }
+   if(![e.domain isEqualToString:@"HTTP"]) {
+     self.status.text=[NSString stringWithFormat:@"SPOJENIE ZLYHALO • %@ (%ld)",e.domain,(long)e.code];
+     [self failure:j error:e]; return;
+   }
+   // HTTP error proves the host answered, but may be serving another application.
+   [self request:@"GET" path:@"/" body:nil done:^(NSDictionary *root,NSError *rootError){
+     if(!rootError || [rootError.domain isEqualToString:@"HTTP"]) {
+       self.status.text=@"SERVER ONLINE • NUM1040 API nenájdené";
+       [self alert:[NSString stringWithFormat:@"Server %@ je dostupný, ale endpoint /api/info vrátil HTTP %ld.\nSkontroluj, či používaš Raspberry Pi pre NUM1040 a správny port (zvyčajne 8080). AlphaLink na 8081 nemusí mať toto API.",[self base],(long)e.code]];
+     } else {
+       self.status.text=@"CHYBA KOMUNIKÁCIE";
+       [self failure:j error:e];
+     }
+   }];
+ }];
+}
 - (void)refreshFiles { [self request:@"GET" path:@"/api/files" body:nil done:^(NSDictionary *j,NSError *e){if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;} NSArray *a=[j[@"files"] isKindOfClass:NSArray.class]?j[@"files"]:@[];self.files=[a mutableCopy];[self.table reloadData]; self.status.text=[NSString stringWithFormat:@"Na Raspberry Pi: %lu programov",(unsigned long)a.count];}]; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{return self.files.count;}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {UITableViewCell *c=[tableView dequeueReusableCellWithIdentifier:@"file"];if(!c)c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"file"];NSDictionary *f=self.files[p.row];NSString *n=f[@"name"]?:@"?";c.textLabel.text=n;c.textLabel.textColor=[UIColor whiteColor]; c.detailTextLabel.text=[NSString stringWithFormat:@"%@ bytes",f[@"size"]?:@0];c.detailTextLabel.textColor=[UIColor lightGrayColor];c.backgroundColor=[n isEqualToString:self.selected]?[UIColor colorWithRed:.05 green:.25 blue:.29 alpha:1]:self.bg;return c;}

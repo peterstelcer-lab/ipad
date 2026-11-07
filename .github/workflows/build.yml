@@ -50,7 +50,7 @@ jobs:
           cat > stage/DEBIAN/control <<'CONTROL'
           Package: sk.cncmylink.ipadmini
           Name: CNC MyLink iPad
-          Version: 1.0-1
+          Version: 1.1-1
           Architecture: iphoneos-arm
           Description: Native CNC NUM1040 client for iPad mini 2 on iOS 12
           Maintainer: CNC MyLink
@@ -60,10 +60,10 @@ jobs:
           CONTROL
           chmod 755 stage/Applications/CNCMyLink.app/CNCMyLink
           chmod 755 stage/Applications stage/Applications/CNCMyLink.app
-          dpkg-deb --build --root-owner-group stage output/CNC_MyLink_iPad_V1_rootful.deb
+          dpkg-deb --build --root-owner-group stage output/CNC_MyLink_iPad_V1_1_rootful.deb
           dpkg-deb --info output/*.deb
       - uses: actions/upload-artifact@v4
         with:
-          name: CNC_MyLink_iPad_V1_DEB
+          name: CNC_MyLink_iPad_V1_1_DEB
           path: output/*.deb
           retention-days: 30
