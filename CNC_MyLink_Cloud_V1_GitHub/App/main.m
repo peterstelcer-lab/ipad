@@ -1,5 +1,9 @@
 #import <UIKit/UIKit.h>
 
+@interface CNCTurningController : UIViewController
+- (instancetype)initWithBaseURL:(NSString *)baseURL;
+@end
+
 @interface CNCController : UIViewController <UITableViewDataSource,UITableViewDelegate,UITextViewDelegate>
 @property(nonatomic,strong) UITextField *address;
 @property(nonatomic,strong) UILabel *status;
@@ -19,17 +23,17 @@
 - (UIColor *)panel { return [UIColor colorWithRed:.07 green:.15 blue:.19 alpha:1]; }
 - (UIColor *)cyan { return [UIColor colorWithRed:.12 green:.85 blue:.80 alpha:1]; }
 - (UIButton *)button:(NSString *)name action:(SEL)sel {
- UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; [b setTitle:name forState:UIControlStateNormal]; b.backgroundColor=self.panel; [b setTitleColor:self.cyan forState:UIControlStateNormal]; b.layer.cornerRadius=9; b.titleLabel.font=[UIFont boldSystemFontOfSize:14]; [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside]; return b;
+ UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; [b setTitle:name forState:UIControlStateNormal]; b.backgroundColor=self.panel; [b setTitleColor:self.cyan forState:UIControlStateNormal]; b.layer.cornerRadius=9; b.titleLabel.font=[UIFont boldSystemFontOfSize:16]; [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside]; return b;
 }
 - (void)viewDidLoad { [super viewDidLoad]; self.view.backgroundColor=self.bg; self.files=[NSMutableArray array]; self.machineMode=0;
- UILabel *title=[UILabel new]; title.text=@"CNC MyLink • iPad V1.2"; title.textColor=self.cyan; title.font=[UIFont boldSystemFontOfSize:23]; title.frame=CGRectMake(16,22,500,30); [self.view addSubview:title];
- self.address=[[UITextField alloc] initWithFrame:CGRectZero]; self.address.textColor=[UIColor whiteColor]; self.address.backgroundColor=self.panel; self.address.layer.cornerRadius=8; self.address.font=[UIFont systemFontOfSize:15]; self.address.autocapitalizationType=UITextAutocapitalizationTypeNone; self.address.autocorrectionType=UITextAutocorrectionTypeNo; self.address.keyboardType=UIKeyboardTypeURL;
+ UILabel *title=[UILabel new]; title.text=@"CNC MyLink • iPad V1.3"; title.textColor=self.cyan; title.font=[UIFont boldSystemFontOfSize:23]; title.frame=CGRectMake(16,22,500,30); [self.view addSubview:title];
+ self.address=[[UITextField alloc] initWithFrame:CGRectZero]; self.address.textColor=[UIColor whiteColor]; self.address.backgroundColor=self.panel; self.address.layer.cornerRadius=8; self.address.font=[UIFont systemFontOfSize:17]; self.address.autocapitalizationType=UITextAutocapitalizationTypeNone; self.address.autocorrectionType=UITextAutocorrectionTypeNo; self.address.keyboardType=UIKeyboardTypeURL;
  self.address.text=[[NSUserDefaults standardUserDefaults] stringForKey:@"pi-url"]?:@"http://192.168.0.169:8080"; [self.view addSubview:self.address];
  UIButton *connect=[self button:@"PRIPOJIŤ" action:@selector(checkConnection)]; connect.tag=11; [self.view addSubview:connect];
- self.status=[UILabel new]; self.status.text=@"Odpojené • pripravené na skúšku"; self.status.font=[UIFont systemFontOfSize:13]; self.status.textColor=[UIColor colorWithWhite:.8 alpha:1]; self.status.numberOfLines=3; [self.view addSubview:self.status];
- self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"PROGRAMY",@"EDITOR"]]; self.tabs.selectedSegmentIndex=0; [self.tabs addTarget:self action:@selector(updateTabs) forControlEvents:UIControlEventValueChanged]; [self.view addSubview:self.tabs];
- self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain]; self.table.backgroundColor=self.bg; self.table.dataSource=self; self.table.delegate=self; self.table.rowHeight=54; self.table.separatorColor=self.panel; [self.view addSubview:self.table];
- self.editor=[[UITextView alloc] initWithFrame:CGRectZero]; self.editor.backgroundColor=[UIColor colorWithRed:.015 green:.04 blue:.055 alpha:1]; self.editor.textColor=[UIColor whiteColor]; self.editor.font=[UIFont fontWithName:@"Menlo" size:15]?:[UIFont monospacedDigitSystemFontOfSize:15 weight:UIFontWeightRegular]; self.editor.autocapitalizationType=UITextAutocapitalizationTypeNone; self.editor.autocorrectionType=UITextAutocorrectionTypeNo; self.editor.delegate=self; [self.view addSubview:self.editor];
+ self.status=[UILabel new]; self.status.text=@"Odpojené • pripravené na skúšku"; self.status.font=[UIFont systemFontOfSize:15]; self.status.textColor=[UIColor colorWithWhite:.8 alpha:1]; self.status.numberOfLines=3; [self.view addSubview:self.status];
+ self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"PROGRAMY",@"G-KÓD",@"OPERÁCIE + 2D"]]; self.tabs.selectedSegmentIndex=0; [self.tabs addTarget:self action:@selector(updateTabs) forControlEvents:UIControlEventValueChanged]; [self.view addSubview:self.tabs];
+ self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain]; self.table.backgroundColor=self.bg; self.table.dataSource=self; self.table.delegate=self; self.table.rowHeight=62; self.table.separatorColor=self.panel; [self.view addSubview:self.table];
+ self.editor=[[UITextView alloc] initWithFrame:CGRectZero]; self.editor.backgroundColor=[UIColor colorWithRed:.015 green:.04 blue:.055 alpha:1]; self.editor.textColor=[UIColor whiteColor]; self.editor.font=[UIFont fontWithName:@"Menlo" size:18]?:[UIFont monospacedDigitSystemFontOfSize:18 weight:UIFontWeightRegular]; self.editor.autocapitalizationType=UITextAutocapitalizationTypeNone; self.editor.autocorrectionType=UITextAutocorrectionTypeNo; self.editor.delegate=self; [self.view addSubview:self.editor];
  NSArray *labels=@[@"OBNOVIŤ",@"OTVORIŤ",@"ULOŽIŤ",@"DO NUM",@"Z NUM",@"STOP"];
  NSArray *sels=@[NSStringFromSelector(@selector(refreshFiles)),NSStringFromSelector(@selector(openSelected)),NSStringFromSelector(@selector(saveEditor)),NSStringFromSelector(@selector(sendSelected)),NSStringFromSelector(@selector(receiveProgram)),NSStringFromSelector(@selector(stopTransfer))];
  for (NSInteger i=0;i<labels.count;i++){ UIButton *b=[self button:labels[i] action:NSSelectorFromString(sels[i])]; b.tag=100+i; [self.view addSubview:b]; }
@@ -46,7 +50,20 @@
  CGRect content=CGRectMake(16,top+213,w-32,MAX(100,footer-(top+221)));
  self.table.frame=content; self.editor.frame=content;
 }
-- (void)updateTabs { BOOL e=self.tabs.selectedSegmentIndex==1; self.table.hidden=e; self.editor.hidden=!e; }
+- (void)updateTabs {
+ if(self.tabs.selectedSegmentIndex==2) {
+  self.tabs.selectedSegmentIndex=0; self.table.hidden=NO; self.editor.hidden=YES;
+  if(self.machineMode!=2 || ![self.connectedBase isEqualToString:[self base]]) {
+   [self alert:@"Editor obrábacích operácií je určený pre pripojený AlphaLink / Harrison Alpha 400. Najprv stlač PRIPOJIŤ a over server."];
+   return;
+  }
+  CNCTurningController *editor=[[CNCTurningController alloc] initWithBaseURL:[self base]];
+  editor.modalPresentationStyle=UIModalPresentationFullScreen;
+  [self presentViewController:editor animated:YES completion:nil];
+  return;
+ }
+ BOOL e=self.tabs.selectedSegmentIndex==1; self.table.hidden=e; self.editor.hidden=!e;
+}
 - (void)alert:(NSString *)message { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"CNC MyLink" message:message preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]]; [self presentViewController:a animated:YES completion:nil]; }
 - (NSString *)base { NSString *v=[self.address.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; if(v.length && [v rangeOfString:@"://"].location==NSNotFound) v=[@"http://" stringByAppendingString:v]; while([v hasSuffix:@"/"])v=[v substringToIndex:v.length-1]; return v; }
 - (void)request:(NSString *)method path:(NSString *)path body:(NSDictionary *)body done:(void (^)(NSDictionary *,NSError *))done {

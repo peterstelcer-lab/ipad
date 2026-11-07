@@ -58,7 +58,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
    [fill addLineToPoint:CGPointMake(X(TNumber(q[0],0)),cy+TNumber(q[1],0)*scale)];}
  [fill closePath];[[UIColor colorWithRed:.57 green:.65 blue:.68 alpha:.9] setFill];[fill fill];
  [TWHITE() setStroke];fill.lineWidth=1.2;[fill stroke];
- [self.verified?[UIColor colorWithRed:.16 green:.95 blue:.52 alpha:1]:TCYAN() setStroke];
+ UIColor *strokeColor=self.verified?[UIColor colorWithRed:.16 green:.95 blue:.52 alpha:1]:TCYAN(); [strokeColor setStroke];
  edge.lineWidth=3;[edge stroke];
  CGContextSetLineDash(c,0,dashes,2);CGContextSetStrokeColorWithColor(c,[UIColor colorWithRed:.3 green:.7 blue:.78 alpha:1].CGColor);
  CGContextMoveToPoint(c,xL-8,cy);CGContextAddLineToPoint(c,xL+cw+8,cy);CGContextStrokePath(c);CGContextSetLineDash(c,0,NULL,0);
@@ -314,7 +314,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (NSDictionary *)enteredOperation {
  NSMutableDictionary *o=[NSMutableDictionary dictionaryWithObject:self.kind forKey:@"type"];
  for(NSArray *d in TDefs(self.kind)){
-  NSString *key=d[0];NSString *v=[self.paramFields[key].text stringByReplacingOccurrencesOfString:@"," withString:@"."];
+  NSString *key=d[0];NSString *v=[((UITextField *)self.paramFields[key]).text stringByReplacingOccurrencesOfString:@"," withString:@"."];
   if(!v.length)return nil;
   double n=[v doubleValue];if(!isfinite(n))return nil;
   o[key]=@(n);

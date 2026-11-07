@@ -18,7 +18,7 @@ jobs:
           mkdir -p stage/Applications/CNCMyLink.app
           xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -O2 \
             -framework UIKit -framework Foundation -framework CoreGraphics \
-            -o stage/Applications/CNCMyLink.app/CNCMyLink CNC_MyLink_Cloud_V1_GitHub/App/main.m
+            -o stage/Applications/CNCMyLink.app/CNCMyLink CNC_MyLink_Cloud_V1_GitHub/App/main.m CNC_MyLink_Cloud_V1_GitHub/App/TurningEditor.m
           cp CNC_MyLink_Cloud_V1_GitHub/App/Info.plist stage/Applications/CNCMyLink.app/Info.plist
           echo 'Binary architecture:'
           lipo -info stage/Applications/CNCMyLink.app/CNCMyLink
@@ -50,7 +50,7 @@ jobs:
           cat > stage/DEBIAN/control <<'CONTROL'
           Package: sk.cncmylink.ipadmini
           Name: CNC MyLink iPad
-          Version: 1.2-1
+          Version: 1.3-1
           Architecture: iphoneos-arm
           Description: Native CNC NUM1040 and AlphaLink client for iPad mini 2 on iOS 12
           Maintainer: CNC MyLink
@@ -60,10 +60,10 @@ jobs:
           CONTROL
           chmod 755 stage/Applications/CNCMyLink.app/CNCMyLink
           chmod 755 stage/Applications stage/Applications/CNCMyLink.app
-          dpkg-deb --build --root-owner-group stage output/CNC_MyLink_iPad_V1_2_rootful.deb
+          dpkg-deb --build --root-owner-group stage output/CNC_MyLink_iPad_V1_3_rootful.deb
           dpkg-deb --info output/*.deb
       - uses: actions/upload-artifact@v4
         with:
-          name: CNC_MyLink_iPad_V1_2_DEB
+          name: CNC_MyLink_iPad_V1_3_DEB
           path: output/*.deb
           retention-days: 30
