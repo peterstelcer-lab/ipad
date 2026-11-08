@@ -13,11 +13,6 @@
 @implementation TCFormula
 - (void)space{while(self.p<self.s.length && [[NSCharacterSet whitespaceAndNewlineCharacterSet] characterIsMember:[self.s characterAtIndex:self.p]])self.p++;}
 - (BOOL)eat:(unichar)ch{[self space];if(self.p<self.s.length&&[self.s characterAtIndex:self.p]==ch){self.p++;return YES;}return NO;}
-- (double)expr;
-- (double)term;
-- (double)unary;
-- (double)power;
-- (double)primary;
 - (double)calculate:(NSString *)s x:(double)x a:(double)a degrees:(BOOL)deg {
  NSString *raw=s?:@"";
  self.s=[[raw stringByReplacingOccurrencesOfString:@"," withString:@"."] lowercaseString];
