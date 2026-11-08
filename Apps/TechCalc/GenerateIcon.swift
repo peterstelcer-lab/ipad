@@ -44,7 +44,7 @@ segment([NSPoint(x:66,y:201),NSPoint(x:94,y:78)],compass,7)
 let pin=NSBezierPath(ovalIn:NSRect(x:56,y:191,width:20,height:20))
 c(0.92,0.95,0.98).setFill();pin.fill()
 c(0.24,0.38,0.43).setStroke();pin.lineWidth=2;pin.stroke()
-let t=AffineTransform(translationByX:12,y:3)
+let t=AffineTransform(translationByX:12,byY:3)
 let transform=NSAffineTransform(transform:t)
 transform.translateX(by:17,yBy:4)
 transform.rotate(byDegrees:-10)
@@ -59,7 +59,7 @@ let keys:[String]=["7","8","9","÷","4","5","6","×","1","2","3","−","±","0",
 for i in 0..<keys.count {
  let x=CGFloat(70+(i%4)*31),y=CGFloat(50+(3-i/4)*23)
  let op=i%4==3
- let fill=keys[i]=="="?c(1.0,0.69,0.23):(op?c(0.11,0.66,0.66):c(0.35,0.47,0.52))
+ let fill = keys[i] == "=" ? c(1.0,0.69,0.23) : (op ? c(0.11,0.66,0.66) : c(0.35,0.47,0.52))
  box(NSRect(x:x,y:y,width:26,height:20),4,fill,c(0.82,0.91,0.93,0.6),1)
  let att=NSAttributedString(string:keys[i],attributes:[
   .font:NSFont.boldSystemFont(ofSize:14),
