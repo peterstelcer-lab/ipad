@@ -1,4 +1,4 @@
-name: Build Nebula Tools iPad iOS12
+name: Build Nebula Tools iPad iOS12 V2
 on:
   workflow_dispatch:
   push:
@@ -17,8 +17,27 @@ jobs:
           set -euo pipefail
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           for app in Commander Media Weather; do mkdir -p "stage/$app/Applications/$app.app"; done
+          echo "Downloading VLC decoder for AVI, MKV, MPEG and other codecs"
+          curl -fL --retry 3 --connect-timeout 30 -o "$RUNNER_TEMP/MobileVLCKit.tar.xz" "https://download.videolan.org/pub/cocoapods/prod/MobileVLCKit-3.6.0-c73b779f-dd8bfdba.tar.xz"
+          mkdir -p "$RUNNER_TEMP/vlc"
+          tar -xJf "$RUNNER_TEMP/MobileVLCKit.tar.xz" -C "$RUNNER_TEMP/vlc"
+          VLC_FRAME="$(find "$RUNNER_TEMP/vlc" -type d -path "*/ios-arm64_armv7_armv7s/MobileVLCKit.framework" | head -1)"
+          test -d "$VLC_FRAME"
+          echo "VLC framework: $VLC_FRAME"
+          file "$VLC_FRAME/MobileVLCKit"
+          ls -lh "$VLC_FRAME/MobileVLCKit"
           xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics NewUtilities/iCommander.m -o stage/Commander/Applications/Commander.app/Commander
-          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework AVKit -framework AVFoundation NewUtilities/NebulaMedia.m -o stage/Media/Applications/Media.app/Media
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -ObjC -F "$(dirname "$VLC_FRAME")" \
+            -framework MobileVLCKit -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics \
+            -framework AVKit -framework AVFoundation -framework Security -framework CFNetwork \
+            -framework AudioToolbox -framework OpenGLES -framework VideoToolbox -framework CoreVideo \
+            -framework CoreMedia -framework CoreText -lc++ -lxml2 -lz -lbz2 -liconv \
+            -Wl,-rpath,@executable_path/Frameworks \
+            NewUtilities/NebulaMedia.m -o stage/Media/Applications/Media.app/Media
+          mkdir -p stage/Media/Applications/Media.app/Frameworks
+          if file "$VLC_FRAME/MobileVLCKit" | grep -q "dynamically linked"; then cp -R "$VLC_FRAME" stage/Media/Applications/Media.app/Frameworks/; fi
+          VLC_LICENSE="$(find "$RUNNER_TEMP/vlc" -name COPYING.txt | head -1 || true)"
+          if [ -n "$VLC_LICENSE" ]; then cp "$VLC_LICENSE" stage/Media/Applications/Media.app/VLC-LICENSE.txt; fi
           xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework SafariServices NewUtilities/SHMUWeather.m -o stage/Weather/Applications/Weather.app/Weather
           for app in Commander Media Weather; do
             cp "NewUtilities/$app.plist" "stage/$app/Applications/$app.app/Info.plist"
@@ -49,16 +68,16 @@ jobs:
             mkdir -p "stage/$app/DEBIAN"
             echo "Package: sk.nebula.$(echo "$app" | tr 'A-Z' 'a-z')" > "stage/$app/DEBIAN/control"
             echo "Name: Nebula $app" >> "stage/$app/DEBIAN/control"
-            echo "Version: 1.0-1" >> "stage/$app/DEBIAN/control"
+            echo "Version: 2.0-1" >> "stage/$app/DEBIAN/control"
             echo "Architecture: iphoneos-arm" >> "stage/$app/DEBIAN/control"
             echo "Maintainer: Nebula Projects" >> "stage/$app/DEBIAN/control"
             echo "Section: Applications" >> "stage/$app/DEBIAN/control"
             echo "Description: Native iPad iOS 12 app" >> "stage/$app/DEBIAN/control"
             chmod 755 "stage/$app/Applications/$app.app/$app"
-            dpkg-deb --build --root-owner-group "stage/$app" "output/Nebula_$app""_iPad_V1.deb"
+            dpkg-deb --build --root-owner-group "stage/$app" "output/Nebula_$app""_iPad_V2.deb"
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: Nebula_3_Apps_iPad_V1_DEB
+          name: Nebula_3_Apps_iPad_V2_DEB
           path: output/*.deb
           retention-days: 30
