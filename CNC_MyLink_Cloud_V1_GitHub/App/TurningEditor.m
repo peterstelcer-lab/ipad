@@ -88,6 +88,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 @property(nonatomic,strong) UIButton *kindButton,*commitButton;
 @property(nonatomic,strong) UITextField *nameField,*diamField,*lengthField,*feedField,*spindleField;
 @property(nonatomic,strong) NSMutableDictionary *paramFields;
+@property(nonatomic,strong) NSMutableArray *stepperSlots;
 @property(nonatomic,strong) NSMutableArray *operations;
 @property(nonatomic,strong) NSArray *projects;
 @property(nonatomic,copy) NSString *kind;
@@ -119,7 +120,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (void)viewDidLoad {
  [super viewDidLoad];self.view.backgroundColor=TBG();
  UIButton *back=[self button:@"‹ SPÄŤ" action:@selector(close)];back.tag=900;[self.view addSubview:back];
- UILabel *heading=[self label:@"CNC MyLink iPad V1.3 • ALPHALINK EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
+ UILabel *heading=[self label:@"CNC MyLink iPad V1.4 • ALPHALINK EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
  self.status=[self label:@"NOVÝ NÁVRH • geometria bude overená Raspberry Pi"];self.status.tag=902;[self.view addSubview:self.status];
  self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"ZADANIE",@"OPERÁCIE",@"2D NÁHĽAD",@"G-KÓD",@"NÁVRHY"]];self.tabs.selectedSegmentIndex=0;
  [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
@@ -130,7 +131,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  self.inputBody=[UIView new];[self.inputScroll addSubview:self.inputBody];
  self.nameField=[self field:@"O0001" numeric:NO];self.diamField=[self field:@"40" numeric:YES];self.lengthField=[self field:@"60" numeric:YES];self.feedField=[self field:@"0.2" numeric:YES];self.spindleField=[self field:@"800" numeric:YES];
  for(UITextField *f in @[self.nameField,self.diamField,self.lengthField,self.feedField,self.spindleField])[self.inputBody addSubview:f];
- self.paramFields=[NSMutableDictionary dictionary];
+ self.paramFields=[NSMutableDictionary dictionary];self.stepperSlots=[NSMutableArray array];
  self.kindButton=[self button:@"OPERÁCIA: STIAHNUŤ PRIEMER ▾" action:@selector(chooseKind)];[self.inputBody addSubview:self.kindButton];
  self.commitButton=[self button:@"PRIDAŤ OPERÁCIU" action:@selector(commitOperation)];[self.inputBody addSubview:self.commitButton];
  UIButton *verify=[self button:@"OVERIŤ PROFIL NA PI" action:@selector(requestPreview)];verify.tag=911;[self.inputBody addSubview:verify];
@@ -177,35 +178,113 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  self.projectsTable.frame=CGRectMake(0,0,pw,MAX(100,ph-72));
  CGFloat pb=(pw-3*10)/4;for(NSInteger i=0;i<4;i++)[self.projectsPage viewWithTag:950+i].frame=CGRectMake(i*(pb+10),ph-60,pb,55);
 }
+- (void)adjustNumber:(UIButton *)button {
+ NSInteger index=(button.tag-2500)/2;
+ if(index<0 || index>=self.stepperSlots.count)return;
+ NSDictionary *slot=self.stepperSlots[index];
+ UITextField *field=slot[@"field"];
+ double increment=[slot[@"step"] doubleValue];
+ NSInteger precision=[slot[@"digits"] integerValue];
+ double current=TParse(field.text);
+ BOOL increase=((button.tag-2500)%2==0);
+ double value=current+(increase?increment:-increment);
+ if(value<0)value=0;
+ if(!isfinite(value))return;
+ field.text=[NSString stringWithFormat:@"%.*f",(int)precision,value];
+ [self fieldChanged];
+}
+- (void)inlineField:(UITextField *)field title:(NSString *)title x:(CGFloat)x y:(CGFloat)y width:(CGFloat)width step:(double)step digits:(NSInteger)digits {
+ BOOL numeric=(step>0);
+ CGFloat spinner=numeric?34:0;
+ CGFloat valueW=numeric?100:138;
+ CGFloat labelW=MAX(110,width-valueW-spinner-14);
+ UILabel *label=[self label:title];
+ label.font=[UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
+ label.adjustsFontSizeToFitWidth=YES;
+ label.minimumScaleFactor=.83;
+ label.numberOfLines=2;
+ label.textColor=[UIColor colorWithRed:.72 green:.88 blue:.91 alpha:1];
+ label.frame=CGRectMake(x,y,labelW,48);
+ [self.inputBody addSubview:label];
+ field.frame=CGRectMake(x+labelW+7,y+2,valueW,44);
+ field.font=[UIFont boldSystemFontOfSize:22];
+ field.textAlignment=NSTextAlignmentCenter;
+ field.textColor=[UIColor whiteColor];
+ field.backgroundColor=[UIColor colorWithRed:.10 green:.29 blue:.36 alpha:1];
+ if(numeric){
+  NSInteger slot=self.stepperSlots.count;
+  [self.stepperSlots addObject:@{@"field":field,@"step":@(step),@"digits":@(digits)}];
+  CGFloat bx=x+labelW+7+valueW+4;
+  UIButton *up=[self button:@"▲" action:@selector(adjustNumber:)];
+  UIButton *down=[self button:@"▼" action:@selector(adjustNumber:)];
+  up.tag=2500+slot*2;down.tag=2501+slot*2;
+  for(UIButton *b in @[up,down]){
+   b.titleLabel.font=[UIFont boldSystemFontOfSize:17];
+   b.backgroundColor=[UIColor colorWithRed:.12 green:.35 blue:.42 alpha:1];
+   b.layer.cornerRadius=5;
+   [self.inputBody addSubview:b];
+  }
+  up.frame=CGRectMake(bx,y+1,spinner,23);
+  down.frame=CGRectMake(bx,y+25,spinner,23);
+ }
+}
 - (void)layoutForm {
- CGFloat w=self.inputScroll.bounds.size.width; if(w<=0)return;
- for(UIView *v in [self.inputBody.subviews copy])if([v isKindOfClass:UILabel.class])[v removeFromSuperview];
- CGFloat gap=18,margin=8,col=(w-margin*2-gap)/2;CGFloat y=8;
+ CGFloat width=self.inputScroll.bounds.size.width;
+ if(width<100)return;
+ for(UIView *v in [self.inputBody.subviews copy]){
+  if([v isKindOfClass:UILabel.class] || ([v isKindOfClass:UIButton.class] && v.tag>=2500 && v.tag<2600))
+   [v removeFromSuperview];
+ }
+ [self.stepperSlots removeAllObjects];
+ CGFloat margin=6,gap=12,col=(width-2*margin-gap)/2.0;
+ CGFloat y=5;
  NSArray *fixed=@[
- @[@"NÁZOV NÁVRHU (.HBJ)",self.nameField],@[@"PRIEMER POLOTOVARU Ø (MM)",self.diamField],
- @[@"DĹŽKA POLOTOVARU (MM)",self.lengthField],@[@"POSUV F (MM/OT)",self.feedField],
- @[@"OTÁČKY VRETENA S (OT/MIN)",self.spindleField]];
- for(NSInteger i=0;i<fixed.count;i++) {
-  NSInteger row=i/2,side=i%2;CGFloat x=margin+side*(col+gap);
-  UILabel *lab=[self label:fixed[i][0]];lab.frame=CGRectMake(x,y+row*83,col,29);[self.inputBody addSubview:lab];
-  UITextField *f=fixed[i][1];f.frame=CGRectMake(x,y+row*83+29,col,49);
+  @[@"Názov návrhu",self.nameField,@0,@0],
+  @[@"Priemer Ø (mm)",self.diamField,@0.1,@1],
+  @[@"Dĺžka (mm)",self.lengthField,@1,@0],
+  @[@"Posuv F (mm/ot)",self.feedField,@0.01,@2],
+  @[@"Otáčky S (ot/min)",self.spindleField,@10,@0]
+ ];
+ for(NSInteger k=0;k<fixed.count;k++){
+  NSArray *entry=fixed[k];
+  [self inlineField:entry[1] title:entry[0] x:margin+(k%2)*(col+gap) y:y+(k/2)*55 width:col step:[entry[2] doubleValue] digits:[entry[3] integerValue]];
  }
- y+=3*83+8;
- UILabel *opTitle=[self label:@"OBRÁBACIA OPERÁCIA"];opTitle.font=[UIFont boldSystemFontOfSize:19];opTitle.textColor=TCYAN();opTitle.frame=CGRectMake(margin,y,w-16,31);[self.inputBody addSubview:opTitle];y+=35;
- self.kindButton.frame=CGRectMake(margin,y,w-margin*2,50);y+=60;
- NSArray *defs=TDefs(self.kind);NSInteger ix=0;
+ y+=3*55+3;
+ UILabel *title=[self label:@"OBRÁBACIA OPERÁCIA"];
+ title.font=[UIFont boldSystemFontOfSize:20];
+ title.textColor=TCYAN();
+ title.frame=CGRectMake(margin,y,width-2*margin,28);
+ [self.inputBody addSubview:title];
+ y+=29;
+ self.kindButton.frame=CGRectMake(margin,y,width-2*margin,43);
+ self.kindButton.titleLabel.font=[UIFont boldSystemFontOfSize:18];
+ y+=49;
+ NSArray *defs=TDefs(self.kind);
+ NSInteger n=0;
  for(NSArray *d in defs){
-  NSInteger side=ix%2,row=ix/2;CGFloat x=margin+side*(col+gap);
-  UILabel *lab=[self label:TString(d[1])];lab.frame=CGRectMake(x,y+row*86,col,32);[self.inputBody addSubview:lab];
-  UITextField *f=self.paramFields[d[0]];f.frame=CGRectMake(x,y+row*86+33,col,49);ix++;
+  NSString *key=TString(d[0]);
+  double step=0.1;NSInteger digits=1;
+  if([key isEqualToString:@"angle"]){step=1;digits=0;}
+  if([key isEqualToString:@"step"]){step=0.1;digits=2;}
+  if([key isEqualToString:@"amount"]){step=0.1;digits=2;}
+  UITextField *field=self.paramFields[key];
+  [self inlineField:field title:TString(d[1]) x:margin+(n%2)*(col+gap) y:y+(n/2)*55 width:col step:step digits:digits];
+  n++;
  }
- y+=ceil(defs.count/2.0)*86+11;
- CGFloat btn=(w-margin*2-10)/2;
- self.commitButton.frame=CGRectMake(margin,y,btn,57);
- [self.inputBody viewWithTag:911].frame=CGRectMake(margin+btn+10,y,btn,57);y+=69;
- [self.inputBody viewWithTag:912].frame=CGRectMake(margin,y,w-margin*2,53);y+=65;
- self.inputBody.frame=CGRectMake(0,0,w,y);
- self.inputScroll.contentSize=CGSizeMake(w,y);
+ y+=ceil((double)defs.count/2.0)*55+5;
+ CGFloat half=(width-2*margin-gap)/2;
+ self.commitButton.frame=CGRectMake(margin,y,half,49);
+ [self.inputBody viewWithTag:911].frame=CGRectMake(margin+half+gap,y,half,49);
+ y+=55;
+ [self.inputBody viewWithTag:912].frame=CGRectMake(margin,y,width-2*margin,48);
+ y+=54;
+ CGFloat available=self.inputScroll.bounds.size.height;
+ self.inputBody.frame=CGRectMake(0,0,width,MAX(y,available));
+ self.inputScroll.contentSize=CGSizeMake(width,MAX(y,available));
+ if(y<=available+1){
+  self.inputScroll.scrollEnabled=NO;
+  self.inputScroll.contentOffset=CGPointZero;
+ }else self.inputScroll.scrollEnabled=YES;
 }
 - (void)fillParams:(NSDictionary *)selected {
  [self.paramFields removeAllObjects];
