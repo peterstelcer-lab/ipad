@@ -10,19 +10,19 @@ func rounded(_ rect:NSRect,_ radius:CGFloat,_ fill:NSColor,_ outline:NSColor?=ni
  fill.setFill();path.fill()
  if let color=outline {color.setStroke();path.lineWidth=3;path.stroke()}
 }
-let aqua=tint(.09,.88,.81),dark=tint(.018,.06,.08)
+let aqua=tint(0.09,0.88,0.81),dark=tint(0.018,0.06,0.08)
 let image=NSImage(size:NSSize(width:256,height:256))
 image.lockFocus()
-NSGradient(colors:[tint(.02,.21,.24),dark])!.draw(in:NSRect(x:0,y:0,width:256,height:256),angle:90)
+NSGradient(colors:[tint(0.02,0.21,0.24),dark])!.draw(in:NSRect(x:0,y:0,width:256,height:256),angle:90)
 rounded(NSRect(x:10,y:10,width:236,height:236),42,dark,aqua)
-rounded(NSRect(x:43,y:31,width:170,height:191),23,tint(.09,.18,.21),tint(.75,.93,.94))
-rounded(NSRect(x:56,y:151,width:144,height:56),9,tint(.015,.085,.10),aqua)
+rounded(NSRect(x:43,y:31,width:170,height:191),23,tint(0.09,0.18,0.21),tint(0.75,0.93,0.94))
+rounded(NSRect(x:56,y:151,width:144,height:56),9,tint(0.015,0.085,0.10),aqua)
 let text=NSAttributedString(string:"12 × 8",attributes:[NSAttributedString.Key.font:NSFont.monospacedDigitSystemFont(ofSize:34,weight:.bold),NSAttributedString.Key.foregroundColor:NSColor.white])
 text.draw(in:NSRect(x:66,y:166,width:129,height:36))
 for row in 0..<3 {
  for col in 0..<4 {
   let x=CGFloat(56+col*38),y=CGFloat(51+row*31)
-  let fill=col==3?aqua:tint(.18,.32,.38)
+  let fill = col == 3 ? aqua : tint(0.18,0.32,0.38)
   rounded(NSRect(x:x,y:y,width:32,height:25),5,fill)
  }
 }
