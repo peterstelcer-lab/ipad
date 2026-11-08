@@ -68,6 +68,13 @@
    [button setTitleColor:[UIColor colorWithRed:.99 green:.78 blue:.43 alpha:1] forState:UIControlStateNormal];
    button.backgroundColor=[UIColor colorWithRed:.065 green:.15 blue:.19 alpha:1];
   }
+  if([name isEqualToString:@"C"]){
+   button.backgroundColor=[UIColor colorWithRed:.83 green:.12 blue:.15 alpha:1];
+   button.layer.borderColor=[UIColor colorWithRed:1 green:.46 blue:.40 alpha:1].CGColor;
+   button.layer.borderWidth=1.5;
+   [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+   button.titleLabel.font=[UIFont boldSystemFontOfSize:37];
+  }
   button.accessibilityLabel=name;
   [button addTarget:self action:@selector(tap:) forControlEvents:UIControlEventTouchUpInside];
   [self.view addSubview:button];[self.buttons addObject:button];
@@ -77,22 +84,24 @@
 - (void)viewDidLayoutSubviews {
  [super viewDidLayoutSubviews];
  CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height;
- CGFloat margin=10;
- CGFloat gridWidth=MIN(w-2*margin,805);
+ CGFloat margin=12;
+ CGFloat gridWidth=MIN(w-2*margin,920);
  CGFloat left=(w-gridWidth)/2;
- self.displayPanel.frame=CGRectMake(left,4,gridWidth,117);
+ CGFloat displayHeight=MIN(150,MAX(120,h*.21));
+ self.displayPanel.frame=CGRectMake(left,3,gridWidth,displayHeight);
  CGFloat sw=self.displayPanel.bounds.size.width;
- self.expression.frame=CGRectMake(18,5,sw-35,27);
- self.display.frame=CGRectMake(18,21,sw-35,78);
- self.memoryIndicator.frame=CGRectMake(18,96,110,18);
- self.errorLabel.frame=CGRectMake(133,96,MAX(0,sw-150),18);
- CGFloat start=133,gap=7;
- CGFloat freeHeight=MAX(260,h-start-8);
+ self.expression.frame=CGRectMake(16,8,sw-32,30);
+ self.display.frame=CGRectMake(16,31,sw-32,displayHeight-52);
+ self.memoryIndicator.frame=CGRectMake(17,displayHeight-22,117,19);
+ self.errorLabel.frame=CGRectMake(145,displayHeight-22,MAX(0,sw-164),19);
+ CGFloat start=displayHeight+13,gap=8;
+ CGFloat freeHeight=MAX(280,h-start-10);
  CGFloat cellWidth=(gridWidth-4*gap)/5;
- CGFloat cellHeight=MIN(69,(freeHeight-5*gap)/6);
+ CGFloat cellHeight=MIN(91,(freeHeight-5*gap)/6);
  for(NSInteger i=0;i<self.buttons.count;i++){
   NSInteger row=i/5,col=i%5;
-  ((UIButton *)self.buttons[i]).frame=CGRectMake(left+col*(cellWidth+gap),start+row*(cellHeight+gap),cellWidth,cellHeight);
+  UIButton *button=self.buttons[i];
+  button.frame=CGRectMake(left+col*(cellWidth+gap),start+row*(cellHeight+gap),cellWidth,cellHeight);
  }
 }
 - (NSDecimalNumberHandler *)rule{
@@ -247,39 +256,76 @@
 @end
 
 @interface TechCalcHost : UIViewController
-@property(nonatomic,strong) UISegmentedControl *modes;
 @property(nonatomic,strong) NSArray *pages;
+@property(nonatomic,strong) NSArray *modeButtons;
+@property(nonatomic,assign) NSInteger selectedMode;
+@property(nonatomic,strong) UIView *sidebar,*separator;
 @end
 @implementation TechCalcHost
 - (void)viewDidLoad {
  [super viewDidLoad];
  self.view.backgroundColor=[UIColor colorWithRed:.018 green:.058 blue:.079 alpha:1];
- self.modes=[[UISegmentedControl alloc] initWithItems:@[@"JEDNODUCHÁ",@"VEDECKÁ",@"JEDNOTKY"]];
- self.modes.selectedSegmentIndex=0;
- [self.modes setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
- [self.modes addTarget:self action:@selector(switchMode) forControlEvents:UIControlEventValueChanged];
- [self.view addSubview:self.modes];
+ self.sidebar=[UIView new];
+ self.sidebar.backgroundColor=[UIColor colorWithRed:.026 green:.093 blue:.116 alpha:1];
+ self.sidebar.layer.cornerRadius=12;
+ [self.view addSubview:self.sidebar];
+ self.separator=[UIView new];self.separator.backgroundColor=[UIColor colorWithRed:.09 green:.49 blue:.48 alpha:.65];
+ [self.view addSubview:self.separator];
+ NSArray *titles=@[@"▦\nJEDNODUCHÁ",@"ƒ(x)\nVEDECKÁ",@"⇄\nJEDNOTKY"];
+ NSMutableArray *buttons=[NSMutableArray array];
+ for(NSInteger i=0;i<3;i++){
+  UIButton *btn=[UIButton buttonWithType:UIButtonTypeSystem];
+  [btn setTitle:titles[i] forState:UIControlStateNormal];
+  btn.titleLabel.font=[UIFont boldSystemFontOfSize:20];
+  btn.titleLabel.numberOfLines=2;btn.titleLabel.textAlignment=NSTextAlignmentCenter;
+  btn.titleLabel.adjustsFontSizeToFitWidth=YES;
+  btn.layer.cornerRadius=10;btn.layer.borderWidth=1.1;
+  btn.tag=660+i;
+  btn.accessibilityLabel=@[@"Jednoduchá kalkulačka",@"Vedecká kalkulačka",@"Prevod jednotiek"][i];
+  [btn addTarget:self action:@selector(chooseMode:) forControlEvents:UIControlEventTouchUpInside];
+  [self.sidebar addSubview:btn];[buttons addObject:btn];
+ }
+ self.modeButtons=buttons;
  self.pages=@[[TechCalcController new],[TCScientificController new],[TCUnitsController new]];
  for(UIViewController *page in self.pages){
   [self addChildViewController:page];
   [self.view addSubview:page.view];
   [page didMoveToParentViewController:self];
  }
- [self switchMode];
+ self.selectedMode=0;[self switchMode];
 }
 - (void)viewDidLayoutSubviews {
  [super viewDidLayoutSubviews];
- CGFloat top=self.view.safeAreaInsets.top+4,bottom=self.view.safeAreaInsets.bottom;
+ CGFloat top=self.view.safeAreaInsets.top+7,bottom=self.view.safeAreaInsets.bottom;
  CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height;
- self.modes.frame=CGRectMake(10,top,w-20,43);
- CGFloat contentTop=top+48;
- CGRect area=CGRectMake(0,contentTop,w,MAX(120,h-contentTop-bottom));
+ CGFloat sideWidth=MIN(191,MAX(150,w*.185));
+ CGFloat height=MAX(300,h-top-bottom-13);
+ self.sidebar.frame=CGRectMake(9,top,sideWidth-6,height);
+ self.separator.frame=CGRectMake(sideWidth+4,top+3,2,height-6);
+ CGFloat modeGap=11;
+ CGFloat modeHeight=MIN(92,MAX(77,height*.14));
+ for(NSInteger i=0;i<3;i++){
+  UIButton *btn=self.modeButtons[i];
+  btn.frame=CGRectMake(9,12+i*(modeHeight+modeGap),sideWidth-24,modeHeight);
+ }
+ CGRect area=CGRectMake(sideWidth+11,top,w-sideWidth-17,height);
  for(UIViewController *page in self.pages)page.view.frame=area;
 }
+- (void)chooseMode:(UIButton *)sender {
+ self.selectedMode=sender.tag-660;
+ [self switchMode];
+}
 - (void)switchMode {
- for(NSInteger i=0;i<self.pages.count;i++) {
-  UIViewController *page=self.pages[i];
-  page.view.hidden=(i!=self.modes.selectedSegmentIndex);
+ UIColor *aqua=[UIColor colorWithRed:.09 green:.87 blue:.82 alpha:1];
+ UIColor *dark=[UIColor colorWithRed:.025 green:.08 blue:.10 alpha:1];
+ for(NSInteger i=0;i<self.modeButtons.count;i++){
+  UIButton *btn=self.modeButtons[i];BOOL current=i==self.selectedMode;
+  btn.backgroundColor=current?aqua:[UIColor colorWithRed:.047 green:.15 blue:.19 alpha:1];
+  [btn setTitleColor:current?dark:[UIColor colorWithRed:.80 green:.92 blue:.94 alpha:1] forState:UIControlStateNormal];
+  btn.layer.borderColor=(current?aqua:[UIColor colorWithRed:.13 green:.39 blue:.42 alpha:1]).CGColor;
+ }
+ for(NSInteger i=0;i<self.pages.count;i++){
+  UIViewController *page=self.pages[i];page.view.hidden=i!=self.selectedMode;
  }
  [self.view endEditing:YES];
 }

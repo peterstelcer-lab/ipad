@@ -1,4 +1,4 @@
-name: Build TechCalc iPad V2
+name: Build TechCalc iPad V3
 on:
   workflow_dispatch:
   push:
@@ -27,7 +27,7 @@ jobs:
           ldid -S stage/Applications/TechCalc.app/TechCalc
       - uses: actions/upload-artifact@v4
         with:
-          name: TechCalc_iPad_V2_app
+          name: TechCalc_iPad_V3_app
           path: stage/
           retention-days: 7
   package:
@@ -36,7 +36,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: TechCalc_iPad_V2_app
+          name: TechCalc_iPad_V3_app
           path: stage
       - name: Build TechCalc rootful DEB
         shell: bash
@@ -46,7 +46,7 @@ jobs:
           cat > stage/DEBIAN/control <<'CONTROL'
           Package: sk.techcalc.ipad
           Name: TechCalc iPad
-          Version: 2.0-1
+          Version: 3.0-1
           Architecture: iphoneos-arm
           Maintainer: TechCalc
           Section: Applications
@@ -55,11 +55,11 @@ jobs:
           Description: Native iOS12 calculator with simple/scientific modes, graph and units converter
           CONTROL
           chmod 755 stage/Applications stage/Applications/TechCalc.app stage/Applications/TechCalc.app/TechCalc
-          dpkg-deb --build --root-owner-group stage output/TechCalc_iPad_V2_rootful.deb
+          dpkg-deb --build --root-owner-group stage output/TechCalc_iPad_V3_rootful.deb
           dpkg-deb --info output/*.deb
           dpkg-deb --contents output/*.deb | grep AppIcon76
       - uses: actions/upload-artifact@v4
         with:
-          name: TechCalc_iPad_V2_DEB
-          path: output/TechCalc_iPad_V2_rootful.deb
+          name: TechCalc_iPad_V3_DEB
+          path: output/TechCalc_iPad_V3_rootful.deb
           retention-days: 30
