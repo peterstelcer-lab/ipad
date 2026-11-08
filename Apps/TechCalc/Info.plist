@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>sk.techcalc.ipad</string>
+<key>CFBundleExecutable</key><string>TechCalc</string>
+<key>CFBundleName</key><string>TechCalc iPad</string>
+<key>CFBundleDisplayName</key><string>TechCalc</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>LSRequiresIPhoneOS</key><true/>
+<key>MinimumOSVersion</key><string>12.0</string>
+<key>UIDeviceFamily</key><array><integer>2</integer></array>
+<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string></array>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+<key>UIStatusBarStyle</key><string>UIStatusBarStyleLightContent</string>
+<key>CFBundleIconFile</key><string>AppIcon76</string>
+<key>CFBundleIconFiles</key><array><string>AppIcon76</string><string>AppIcon76@2x</string><string>AppIcon83.5@2x</string></array>
+<key>CFBundleIcons~ipad</key><dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconFiles</key><array><string>AppIcon76</string><string>AppIcon76@2x</string><string>AppIcon83.5@2x</string></array></dict></dict>
+<key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconFiles</key><array><string>AppIcon76</string><string>AppIcon76@2x</string><string>AppIcon83.5@2x</string></array></dict></dict>
+</dict></plist>
