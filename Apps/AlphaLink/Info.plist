@@ -6,8 +6,8 @@
  <key>CFBundleName</key><string>AlphaLink CAM</string>
  <key>CFBundleDisplayName</key><string>AlphaLink CAM</string>
  <key>CFBundlePackageType</key><string>APPL</string>
- <key>CFBundleVersion</key><string>15</string>
- <key>CFBundleShortVersionString</key><string>1.5</string>
+ <key>CFBundleVersion</key><string>151</string>
+ <key>CFBundleShortVersionString</key><string>1.5.1</string>
  <key>LSRequiresIPhoneOS</key><true/>
  <key>MinimumOSVersion</key><string>12.0</string>
  <key>UIDeviceFamily</key><array><integer>2</integer></array>
@@ -15,4 +15,16 @@
  <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
  <key>UIStatusBarStyle</key><string>UIStatusBarStyleLightContent</string>
  <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+ <key>CFBundleIconFile</key><string>AppIcon76</string>
+ <key>CFBundleIconFiles</key><array><string>AppIcon76</string><string>AppIcon76@2x</string><string>AppIcon83.5@2x</string></array>
+ <key>CFBundleIcons~ipad</key><dict>
+  <key>CFBundlePrimaryIcon</key><dict>
+   <key>CFBundleIconFiles</key><array><string>AppIcon76</string><string>AppIcon76@2x</string><string>AppIcon83.5@2x</string></array>
+  </dict>
+ </dict>
+ <key>CFBundleIcons</key><dict>
+  <key>CFBundlePrimaryIcon</key><dict>
+   <key>CFBundleIconFiles</key><array><string>AppIcon76</string><string>AppIcon76@2x</string><string>AppIcon83.5@2x</string></array>
+  </dict>
+ </dict>
 </dict></plist>

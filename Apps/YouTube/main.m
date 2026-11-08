@@ -14,8 +14,8 @@
 - (UIButton *)button:(NSString *)name selector:(SEL)sel {
  UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem];
  [b setTitle:name forState:UIControlStateNormal];[b setTitleColor:[self accentColor] forState:UIControlStateNormal];
- b.titleLabel.font=[UIFont boldSystemFontOfSize:17]; b.backgroundColor=[UIColor colorWithRed:.07 green:.16 blue:.2 alpha:1];
- b.layer.cornerRadius=8;[b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside];
+ b.titleLabel.font=[UIFont boldSystemFontOfSize:14]; b.backgroundColor=[UIColor colorWithRed:.07 green:.16 blue:.2 alpha:1];
+ b.layer.cornerRadius=5;[b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside];
  return b;
 }
 - (void)viewDidLoad {
@@ -33,10 +33,11 @@
  NSArray *others=@[self.backBtn,self.nextBtn,
  [self button:@"DOMOV" selector:@selector(goHome)],
  [self button:@"OBNOVIŤ" selector:@selector(reload)],
- [self button:@"SAFARI" selector:@selector(openSafari)]];
+ [self button:@"SAFARI" selector:@selector(openSafari)],
+ [self button:@"MOJE ▾" selector:@selector(openPersonalMenu)]];
  for(NSInteger i=0;i<others.count;i++){UIButton *b=others[i];b.tag=100+i;[self.view addSubview:b];}
  self.status=[UILabel new];self.status.textColor=[UIColor colorWithWhite:.85 alpha:1];
- self.status.font=[UIFont systemFontOfSize:15];self.status.text=@"YouTube Web • iPad iOS 12";self.status.numberOfLines=1;
+ self.status.font=[UIFont systemFontOfSize:12];self.status.text=@"YouTube Web • pripravené";self.status.numberOfLines=1;self.status.textAlignment=NSTextAlignmentRight;self.status.adjustsFontSizeToFitWidth=YES;
  [self.view addSubview:self.status];
  self.progress=[UIProgressView new];self.progress.progressTintColor=[self accentColor];[self.view addSubview:self.progress];
  self.loading=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];[self.view addSubview:self.loading];
@@ -46,19 +47,22 @@
  [super viewDidLayoutSubviews];
  CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height;
  CGFloat top=self.view.safeAreaInsets.top,bottom=self.view.safeAreaInsets.bottom;
- CGFloat margin=10,gap=8,toolbarHeight=48,topY=top+5;
- CGFloat widths[]={105,105,105,125,105};
- CGFloat total=0;for(int i=0;i<5;i++)total+=widths[i];total+=4*gap;
- CGFloat scale=MIN(1,(w-2*margin)/total);
- CGFloat x=margin;for(NSInteger i=0;i<5;i++){
-   CGFloat cw=widths[i]*scale;
-   [self.view viewWithTag:100+i].frame=CGRectMake(x,topY,cw,toolbarHeight);
-   x+=cw+gap*scale;
+ CGFloat margin=8,gap=5,toolbarHeight=28,topY=top+3;
+ CGFloat widths[]={76,76,69,90,70,89};
+ CGFloat total=0;for(NSInteger i=0;i<6;i++)total+=widths[i];
+ CGFloat statusWidth=MIN(210,MAX(90,w*.22));
+ CGFloat scale=MIN(1,MAX(.70,(w-2*margin-statusWidth-20-5*gap)/total));
+ CGFloat x=margin;
+ for(NSInteger i=0;i<6;i++){
+  CGFloat cw=widths[i]*scale;
+  [self.view viewWithTag:100+i].frame=CGRectMake(x,topY,cw,toolbarHeight);
+  x+=cw+gap;
  }
- self.loading.frame=CGRectMake(w-43,topY+8,28,28);
- self.status.frame=CGRectMake(margin,topY+toolbarHeight+4,w-2*margin,24);
- self.progress.frame=CGRectMake(0,topY+toolbarHeight+29,w,3);
- CGFloat webY=topY+toolbarHeight+33;
+ CGFloat statusX=MAX(x+4,w-statusWidth-8);
+ self.loading.frame=CGRectMake(statusX,topY+6,16,16);
+ self.status.frame=CGRectMake(statusX+19,topY+2,MAX(15,w-statusX-27),toolbarHeight-2);
+ self.progress.frame=CGRectMake(0,topY+toolbarHeight+2,w,2);
+ CGFloat webY=topY+toolbarHeight+5;
  self.web.frame=CGRectMake(0,webY,w,MAX(100,h-webY-bottom));
 }
 - (void)sync {
@@ -68,6 +72,26 @@
 }
 - (void)goHome {NSURL *u=[NSURL URLWithString:@"https://m.youtube.com/"];[self.web loadRequest:[NSURLRequest requestWithURL:u cachePolicy:NSURLRequestUseProtocolCachePolicy timeoutInterval:30]];}
 - (void)reload {[self.web reload];}
+- (void)openPersonalPath:(NSString *)path {
+ NSURL *u=[NSURL URLWithString:[@"https://m.youtube.com" stringByAppendingString:path]];
+ if(u)[self.web loadRequest:[NSURLRequest requestWithURL:u cachePolicy:NSURLRequestUseProtocolCachePolicy timeoutInterval:30]];
+}
+- (void)openPersonalMenu {
+ UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"Moje videá na YouTube"
+  message:@"Otvoria sa príslušné stránky YouTube. Dostupnosť súkromných zoznamov závisí od prihlásenia v tomto okne." preferredStyle:UIAlertControllerStyleActionSheet];
+ NSArray *labels=@[@"História",@"Pozrieť neskôr",@"Páči sa mi",@"Playlisty",@"Odbery"];
+ NSArray *paths=@[@"/feed/history",@"/playlist?list=WL",@"/playlist?list=LL",@"/feed/playlists",@"/feed/subscriptions"];
+ for(NSInteger i=0;i<labels.count;i++){
+  NSString *path=paths[i];
+  [menu addAction:[UIAlertAction actionWithTitle:labels[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self openPersonalPath:path];}]];
+ }
+ [menu addAction:[UIAlertAction actionWithTitle:@"OTVORIŤ V SAFARI" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self openSafari];}]];
+ [menu addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ UIPopoverPresentationController *pop=menu.popoverPresentationController;
+ UIView *origin=[self.view viewWithTag:105];
+ if(pop){pop.sourceView=origin;pop.sourceRect=origin.bounds;}
+ [self presentViewController:menu animated:YES completion:nil];
+}
 - (void)goBack {if(self.web.canGoBack)[self.web goBack];}
 - (void)goForward {if(self.web.canGoForward)[self.web goForward];}
 - (void)openSafari {
@@ -79,7 +103,7 @@
  self.status.text=@"Načítavam YouTube...";[self.loading startAnimating];[self sync];
 }
 - (void)webView:(WKWebView *)web didFinishNavigation:(WKNavigation *)nav {
- [self.loading stopAnimating];self.status.text=@"YouTube Web • pripravené";[self sync];self.progress.progress=0;
+ [self.loading stopAnimating];self.status.text=@"Pripravené";[self sync];self.progress.progress=0;
 }
 - (void)webView:(WKWebView *)web didFailNavigation:(WKNavigation *)nav withError:(NSError *)error {
  [self failed:error];
