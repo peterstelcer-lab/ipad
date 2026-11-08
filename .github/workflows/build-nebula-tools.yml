@@ -17,9 +17,9 @@ jobs:
           set -euo pipefail
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           for app in Commander Media Weather; do mkdir -p "stage/$app/Applications/$app.app"; done
-          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore NewUtilities/iCommander.m -o stage/Commander/Applications/Commander.app/Commander
-          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework AVKit -framework AVFoundation NewUtilities/NebulaMedia.m -o stage/Media/Applications/Media.app/Media
-          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework SafariServices NewUtilities/SHMUWeather.m -o stage/Weather/Applications/Weather.app/Weather
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics NewUtilities/iCommander.m -o stage/Commander/Applications/Commander.app/Commander
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework AVKit -framework AVFoundation NewUtilities/NebulaMedia.m -o stage/Media/Applications/Media.app/Media
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -fblocks -O2 -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework SafariServices NewUtilities/SHMUWeather.m -o stage/Weather/Applications/Weather.app/Weather
           for app in Commander Media Weather; do
             cp "NewUtilities/$app.plist" "stage/$app/Applications/$app.app/Info.plist"
             lipo -info "stage/$app/Applications/$app.app/$app"
