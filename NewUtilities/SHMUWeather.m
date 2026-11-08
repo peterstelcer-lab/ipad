@@ -1,6 +1,8 @@
 #import "Shared.h"
 #import <SafariServices/SafariServices.h>
 static NSString* S(id o){return (o&&o!=(id)[NSNull null])?[o description]:@"—";}
+static NSString* Degree(id val){return (val&&val!=(id)[NSNull null])?[NSString stringWithFormat:@"%.0f",[val doubleValue]]:@"—";}
+static NSString* OneDecimal(id val){return (val&&val!=(id)[NSNull null])?[NSString stringWithFormat:@"%.1f",[val doubleValue]]:@"—";}
 static NSString* Icon(NSString*code) {
  NSString*c=[[S(code) lowercaseString] stringByReplacingOccurrencesOfString:@"_" withString:@" "];
  if([c containsString:@"thunder"])return @"⛈️";
@@ -37,11 +39,13 @@ static NSString* Day(NSString*iso){
 @property(nonatomic,strong)UILabel*desc;
 @property(nonatomic,strong)UILabel*temp;
 @property(nonatomic,strong)UILabel*rain;
+@property(nonatomic,strong)UIView*stripe;
 @end
 @implementation WeatherDayCell
 -(instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString*)ident{
  if((self=[super initWithStyle:style reuseIdentifier:ident])){
- self.backgroundColor=C(0x172E3B);
+ self.backgroundColor=C(0x172E3B);self.contentView.backgroundColor=C(0x172E3B);
+ _stripe=[UIView new];_stripe.backgroundColor=C(0x42D5BE);[self.contentView addSubview:_stripe];
  _sym=L(@"☀️",48);_sym.textAlignment=NSTextAlignmentCenter;
  _day=L(@"",18);_day.font=[UIFont boldSystemFontOfSize:18];
  _desc=L(@"",15);_desc.textColor=C(0x9FC3C9);
@@ -53,7 +57,8 @@ static NSString* Day(NSString*iso){
 }
 -(void)layoutSubviews{
  [super layoutSubviews];CGFloat w=self.contentView.bounds.size.width;
- _sym.frame=CGRectMake(6,9,79,78);
+ _stripe.frame=CGRectMake(0,6,5,92);
+ _sym.frame=CGRectMake(10,9,76,78);
  _day.frame=CGRectMake(96,10,MAX(80,w-265),29);
  _desc.frame=CGRectMake(96,43,MAX(80,w-260),25);
  _temp.frame=CGRectMake(MAX(w-180,170),10,170,36);
@@ -71,14 +76,14 @@ static NSString* Day(NSString*iso){
  [super viewDidLoad];self.view.backgroundColor=C(0x091620);
  station=[[NSUserDefaults standardUserDefaults]stringForKey:@"station"]?:@"32801";
  city=[[NSUserDefaults standardUserDefaults]stringForKey:@"city"]?:@"Žilina";
- header=L(@"SHMÚ  •  WEATHER V2",22);header.font=[UIFont boldSystemFontOfSize:22];[self.view addSubview:header];
+ header=L(@"SHMÚ  •  WEATHER V3",22);header.font=[UIFont boldSystemFontOfSize:22];[self.view addSubview:header];
  query=[UITextField new];query.backgroundColor=C(0x1B3442);query.textColor=UIColor.whiteColor;query.layer.cornerRadius=9;
  query.leftView=[[UIView alloc]initWithFrame:CGRectMake(0,0,12,42)];query.leftViewMode=UITextFieldViewModeAlways;
  query.attributedPlaceholder=[[NSAttributedString alloc]initWithString:@"Vyhľadať mesto..." attributes:@{NSForegroundColorAttributeName:C(0x97AFBA)}];
  query.returnKeyType=UIReturnKeySearch;query.delegate=self;query.autocorrectionType=UITextAutocorrectionTypeNo;[self.view addSubview:query];
  NSArray*names=@[@"⌕  HĽADAŤ",@"↻  OBNOVIŤ",@"10 DNÍ ▸"];NSMutableArray*arr=[NSMutableArray array];
  for(int i=0;i<3;i++){UIButton*b=B(names[i],self,@selector(tap:),i);[self.view addSubview:b];[arr addObject:b];}buttons=arr;
- hero=[UIView new];hero.backgroundColor=C(0x153442);hero.layer.cornerRadius=14;[self.view addSubview:hero];
+ hero=[UIView new];hero.backgroundColor=C(0x153442);hero.layer.cornerRadius=14;hero.layer.borderWidth=1;hero.layer.borderColor=C(0x255C70).CGColor;[self.view addSubview:hero];
  cityLabel=L(city,24);cityLabel.font=[UIFont boldSystemFontOfSize:24];[hero addSubview:cityLabel];
  nowIcon=L(@"⛅️",68);nowIcon.textAlignment=NSTextAlignmentCenter;[hero addSubview:nowIcon];
  nowTemp=L(@"— °C",34);nowTemp.font=[UIFont boldSystemFontOfSize:36];nowTemp.textColor=C(0x42D5BE);[hero addSubview:nowTemp];
@@ -100,7 +105,7 @@ static NSString* Day(NSString*iso){
  cityLabel.frame=CGRectMake(18,9,hero.bounds.size.width-36,34);
  nowIcon.frame=CGRectMake(12,45,87,hh-49);
  nowTemp.frame=CGRectMake(115,48,MIN(200,hero.bounds.size.width-125),50);
- nowText.frame=CGRectMake(116,102,MAX(80,hero.bounds.size.width-135),38);
+ nowText.frame=CGRectMake(116,92,MAX(80,hero.bounds.size.width-135),35);
  CGFloat rowY=CGRectGetMaxY(hero.frame)+12;
  status.frame=CGRectMake(p,h-self.view.safeAreaInsets.bottom-33,w-2*p,27);
  table.frame=CGRectMake(p,rowY,w-2*p,MAX(135,CGRectGetMinY(status.frame)-rowY-8));
@@ -136,15 +141,15 @@ static NSString* Day(NSString*iso){
   if(e||![a isKindOfClass:[NSArray class]]){self->status.text=@"Nedostupný server • zobrazené staršie dáta, ak existujú";return;}
   self->days=a;[self->table reloadData];NSData*b=[NSJSONSerialization dataWithJSONObject:a options:0 error:nil];
   if(b)[[NSUserDefaults standardUserDefaults]setObject:b forKey:[@"cache" stringByAppendingString:self->station]];
-  self->status.text=@"SHMÚ ALADIN • 3-dňová predpoveď (model)";
+  NSDateFormatter*f=[NSDateFormatter new];f.dateFormat=@"HH:mm";self->status.text=[NSString stringWithFormat:@"SHMÚ ALADIN • model • aktualizované %@",[f stringFromDate:NSDate.date]];
  }];
  [self req:[NSString stringWithFormat:@"/now?station=%@",station] done:^(NSDictionary*j,NSError*e){
   if(requestID!=self->token)return;
   NSDictionary*c=j[@"current"];if(![c isKindOfClass:[NSDictionary class]])return;
   NSArray*w=c[@"weather"];NSDictionary*v=w.count>0?w[0]:@{};NSString*code=S(v[@"code"]);
   self->nowIcon.text=Icon(code);
-  id temp=c[@"main"][@"temp"];self->nowTemp.text=[NSString stringWithFormat:@"%.0f °C",[temp doubleValue]];
-  NSString*wind=[NSString stringWithFormat:@"%.1f m/s",[c[@"wind"][@"speed"] doubleValue]];
+  id temp=c[@"main"][@"temp"];self->nowTemp.text=[NSString stringWithFormat:@"%@ °C",Degree(temp)];
+  NSString*wind=[NSString stringWithFormat:@"%@ m/s",OneDecimal(c[@"wind"][@"speed"])];
   self->nowText.text=[NSString stringWithFormat:@"%@   •   vietor %@",Descr(code),wind];
  }];
 }
@@ -161,9 +166,9 @@ static NSString* Day(NSString*iso){
  if(!c)c=[[WeatherDayCell alloc]initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"forecast"];
  NSDictionary*d=days[p.row];NSDictionary*w=[d[@"weather"] isKindOfClass:NSDictionary.class]?d[@"weather"]:@{};
  NSString*code=S(w[@"code"]);c.sym.text=Icon(code);c.day.text=Day(S(d[@"date"]));
- c.desc.text=Descr(code);
- c.temp.text=[NSString stringWithFormat:@"%.0f° / %.0f°",[d[@"temp_max"] doubleValue],[d[@"temp_min"] doubleValue]];
- c.rain.text=[NSString stringWithFormat:@"💧 %.1f mm    💨 %.1f m/s",[d[@"precipitation_total"] doubleValue],[d[@"wind_speed_max"] doubleValue]];
+ c.desc.text=Descr(code);c.stripe.backgroundColor=[code.lowercaseString containsString:@"rain"]?C(0x50B9FF):([code.lowercaseString containsString:@"snow"]?C(0x9FE8FF):([code.lowercaseString containsString:@"clear"]?C(0xFFD16D):C(0x42D5BE)));
+ c.temp.text=[NSString stringWithFormat:@"%@° / %@°",Degree(d[@"temp_max"]),Degree(d[@"temp_min"])];
+ c.rain.text=[NSString stringWithFormat:@"💧 %@ mm     💨 %@ m/s",OneDecimal(d[@"precipitation_total"]),OneDecimal(d[@"wind_speed_max"])];
  return c;
 }
 -(void)tableView:(UITableView*)t didSelectRowAtIndexPath:(NSIndexPath*)p{
