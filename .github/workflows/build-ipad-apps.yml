@@ -1,0 +1,120 @@
+name: Build three iPad Apps - AlphaLink NUM1040 YouTube Web
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'Apps/**'
+      - '.github/workflows/build-ipad-apps.yml'
+jobs:
+  compile:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native iOS 12 ARM64 apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          mkdir -p build/AlphaLink/Applications/AlphaLinkiPad.app
+          mkdir -p build/NUM1040/Applications/NUM1040Transfer.app
+          mkdir -p build/YouTube/Applications/YouTubeWebiPad.app
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -O2 \
+            -framework UIKit -framework Foundation -framework CoreGraphics \
+            Apps/AlphaLink/main.m Apps/AlphaLink/TurningEditor.m \
+            -o build/AlphaLink/Applications/AlphaLinkiPad.app/AlphaLinkiPad
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -O2 \
+            -framework UIKit -framework Foundation -framework CoreGraphics \
+            Apps/NUM1040/main.m \
+            -o build/NUM1040/Applications/NUM1040Transfer.app/NUM1040Transfer
+          xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -O2 \
+            -framework UIKit -framework WebKit -framework Foundation -framework CoreGraphics \
+            Apps/YouTube/main.m \
+            -o build/YouTube/Applications/YouTubeWebiPad.app/YouTubeWebiPad
+          cp Apps/AlphaLink/Info.plist build/AlphaLink/Applications/AlphaLinkiPad.app/Info.plist
+          cp Apps/NUM1040/Info.plist build/NUM1040/Applications/NUM1040Transfer.app/Info.plist
+          cp Apps/YouTube/Info.plist build/YouTube/Applications/YouTubeWebiPad.app/Info.plist
+          for binary in build/AlphaLink/Applications/AlphaLinkiPad.app/AlphaLinkiPad build/NUM1040/Applications/NUM1040Transfer.app/NUM1040Transfer build/YouTube/Applications/YouTubeWebiPad.app/YouTubeWebiPad; do
+            lipo -info "$binary"
+          done
+      - name: Jailbreak signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ldid
+          for binary in build/AlphaLink/Applications/AlphaLinkiPad.app/AlphaLinkiPad build/NUM1040/Applications/NUM1040Transfer.app/NUM1040Transfer build/YouTube/Applications/YouTubeWebiPad.app/YouTubeWebiPad; do
+            ldid -S "$binary"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: three-compiled-apps
+          path: build/
+          retention-days: 7
+  package:
+    needs: compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: three-compiled-apps
+          path: build
+      - name: Package independent rootful jailbreak apps
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          mkdir -p build/AlphaLink/DEBIAN build/NUM1040/DEBIAN build/YouTube/DEBIAN
+          cat > build/AlphaLink/DEBIAN/control <<'EOF'
+          Package: sk.alphalink.camipad
+          Name: AlphaLink CAM iPad
+          Version: 1.5-1
+          Architecture: iphoneos-arm
+          Maintainer: AlphaLink
+          Section: Applications
+          Priority: optional
+          Depends: firmware (>= 12.0)
+          Description: AlphaLink CAM native iPad editor for Harrison Alpha 400
+          EOF
+          cat > build/NUM1040/DEBIAN/control <<'EOF'
+          Package: sk.num1040.ipadtransfer
+          Name: NUM 1040 Transfer
+          Version: 1.0-1
+          Architecture: iphoneos-arm
+          Maintainer: NUM 1040
+          Section: Applications
+          Priority: optional
+          Depends: firmware (>= 12.0)
+          Description: Native NUM1040 file transfer for iPad iOS12
+          EOF
+          cat > build/YouTube/DEBIAN/control <<'EOF'
+          Package: sk.youtube.webipad
+          Name: YouTube Web iPad
+          Version: 1.0-1
+          Architecture: iphoneos-arm
+          Maintainer: YouTube Web
+          Section: Applications
+          Priority: optional
+          Depends: firmware (>= 12.0)
+          Description: Independent WebKit YouTube mobile website window on iOS12
+          EOF
+          chmod 755 build/AlphaLink/Applications/AlphaLinkiPad.app/AlphaLinkiPad
+          chmod 755 build/NUM1040/Applications/NUM1040Transfer.app/NUM1040Transfer
+          chmod 755 build/YouTube/Applications/YouTubeWebiPad.app/YouTubeWebiPad
+          dpkg-deb --build --root-owner-group build/AlphaLink output/AlphaLink_CAM_iPad_V1_5.deb
+          dpkg-deb --build --root-owner-group build/NUM1040 output/NUM1040_Transfer_iPad_V1.deb
+          dpkg-deb --build --root-owner-group build/YouTube output/YouTube_Web_iPad_V1.deb
+          for pkg in output/*.deb;do dpkg-deb --info "$pkg";done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AlphaLink_CAM_iPad_V1_5_DEB
+          path: output/AlphaLink_CAM_iPad_V1_5.deb
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NUM1040_Transfer_iPad_V1_DEB
+          path: output/NUM1040_Transfer_iPad_V1.deb
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YouTube_Web_iPad_V1_DEB
+          path: output/YouTube_Web_iPad_V1.deb
+          retention-days: 30
