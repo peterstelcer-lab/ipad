@@ -35,11 +35,12 @@ func makeIcon(_ kind:String){
  let bounds=NSRect(origin:.zero,size:size)
  let youtube=(kind=="YouTube")
  let milling=(kind=="NUM1040")
- let edge=youtube?red:aqua
- let gradient=NSGradient(colors:youtube?[rgb(0.35,0.025,0.045),rgb(0.05,0.012,0.024)]:[rgb(0.015,0.21,0.27),rgb(0.015,0.055,0.08)])!
+ let edge = youtube ? red : aqua
+ let gradientColors: [NSColor] = youtube ? [rgb(0.35,0.025,0.045),rgb(0.05,0.012,0.024)] : [rgb(0.015,0.21,0.27),rgb(0.015,0.055,0.08)]
+ let gradient=NSGradient(colors:gradientColors)!
  gradient.draw(in:bounds,angle:95)
  rounded(NSRect(x:9,y:9,width:238,height:238),43,rgb(0.012,0.07,0.10,0.48),edge,7)
- rounded(NSRect(x:21,y:21,width:214,height:214),29,youtube?rgb(0.22,0.015,0.034):rgb(0.022,0.10,0.13),edge.withAlphaComponent(0.28),2)
+ rounded(NSRect(x:21,y:21,width:214,height:214),29,(youtube ? rgb(0.22,0.015,0.034) : rgb(0.022,0.10,0.13)),edge.withAlphaComponent(0.28),2)
  if youtube {
   rounded(NSRect(x:41,y:62,width:174,height:133),25,rgb(0.07,0.012,0.025),rgb(0.86,0.87,0.92),6)
   let triangle=[NSPoint(x:104,y:93),NSPoint(x:104,y:167),NSPoint(x:169,y:130)]
@@ -66,14 +67,15 @@ func makeIcon(_ kind:String){
   stroke([NSPoint(x:75,y:99),NSPoint(x:211,y:99)],aqua,2)
  }
  im.unlockFocus()
- let outDir=URL(fileURLWithPath:root).appendingPathComponent(kind).appendingPathComponent("Applications").appendingPathComponent(kind=="AlphaLink"?"AlphaLinkiPad.app":kind=="NUM1040"?"NUM1040Transfer.app":"YouTubeWebiPad.app")
+ let appFolder = kind == "AlphaLink" ? "AlphaLinkiPad.app" : (kind == "NUM1040" ? "NUM1040Transfer.app" : "YouTubeWebiPad.app")
+ let outDir=URL(fileURLWithPath:root).appendingPathComponent(kind).appendingPathComponent("Applications").appendingPathComponent(appFolder)
  try! FileManager.default.createDirectory(at:outDir,withIntermediateDirectories:true)
  let bitmap=NSBitmapImageRep(data:im.tiffRepresentation!)!
  for (name,n) in [("AppIcon76.png",76),("AppIcon76@2x.png",152),("AppIcon83.5@2x.png",167)]{
-  let resized=NSImage(size:NSSize(width:n,height:n))
+  let resized=NSImage(size:NSSize(width:CGFloat(n),height:CGFloat(n)))
   resized.lockFocus()
   NSGraphicsContext.current?.imageInterpolation = .high
-  im.draw(in:NSRect(x:0,y:0,width:n,height:n),from:NSRect(x:0,y:0,width:256,height:256),operation:.copy,fraction:1)
+  im.draw(in:NSRect(x:0,y:0,width:CGFloat(n),height:CGFloat(n)),from:NSRect(x:0,y:0,width:256,height:256),operation:.copy,fraction:1)
   resized.unlockFocus()
   let repr=NSBitmapImageRep(data:resized.tiffRepresentation!)!
   let png=repr.representation(using:.png,properties:[:])!
