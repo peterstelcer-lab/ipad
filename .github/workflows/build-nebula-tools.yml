@@ -1,4 +1,4 @@
-name: Build Nebula Tools iPad iOS12 V2
+name: Build Nebula Tools iPad iOS12 V3
 on:
   workflow_dispatch:
   push:
@@ -68,16 +68,22 @@ jobs:
             mkdir -p "stage/$app/DEBIAN"
             echo "Package: sk.nebula.$(echo "$app" | tr 'A-Z' 'a-z')" > "stage/$app/DEBIAN/control"
             echo "Name: Nebula $app" >> "stage/$app/DEBIAN/control"
-            echo "Version: 2.0-1" >> "stage/$app/DEBIAN/control"
+            echo "Version: 3.0-1" >> "stage/$app/DEBIAN/control"
             echo "Architecture: iphoneos-arm" >> "stage/$app/DEBIAN/control"
             echo "Maintainer: Nebula Projects" >> "stage/$app/DEBIAN/control"
             echo "Section: Applications" >> "stage/$app/DEBIAN/control"
             echo "Description: Native iPad iOS 12 app" >> "stage/$app/DEBIAN/control"
+            cat > "stage/$app/DEBIAN/postinst" <<'POST'
+          #!/bin/sh
+          command -v uicache >/dev/null 2>&1 && uicache -a >/dev/null 2>&1 || true
+          exit 0
+          POST
+            chmod 755 "stage/$app/DEBIAN/postinst"
             chmod 755 "stage/$app/Applications/$app.app/$app"
-            dpkg-deb --build --root-owner-group "stage/$app" "output/Nebula_$app""_iPad_V2.deb"
+            dpkg-deb --build --root-owner-group "stage/$app" "output/Nebula_$app""_iPad_V3.deb"
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: Nebula_3_Apps_iPad_V2_DEB
+          name: Nebula_3_Apps_iPad_V3_DEB
           path: output/*.deb
           retention-days: 30
