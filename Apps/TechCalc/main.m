@@ -1,9 +1,11 @@
 #import <UIKit/UIKit.h>
 #import <math.h>
 
+@interface TCScientificController : UIViewController @end
+@interface TCUnitsController : UIViewController @end
+
 @interface TechCalcController : UIViewController
-@property(nonatomic,strong) UILabel *heading,*hint,*expression,*display,*memoryIndicator,*errorLabel;
-@property(nonatomic,strong) UISegmentedControl *tabs;
+@property(nonatomic,strong) UILabel *expression,*display,*memoryIndicator,*errorLabel;
 @property(nonatomic,strong) UIView *displayPanel;
 @property(nonatomic,strong) NSMutableArray *buttons;
 @property(nonatomic,copy) NSString *entry,*pending,*repeatOperator;
@@ -22,15 +24,6 @@
 }
 - (void)viewDidLoad {
  [super viewDidLoad];self.view.backgroundColor=self.bg;
- self.heading=[self label:@"TechCalc iPad" font:25 color:self.accent];
- self.heading.font=[UIFont boldSystemFontOfSize:25];[self.view addSubview:self.heading];
- self.hint=[self label:@"V1 • VEDECKÁ A JEDNOTKY PRIPRAVUJEME" font:13 color:self.pale];
- self.hint.textAlignment=NSTextAlignmentRight;self.hint.adjustsFontSizeToFitWidth=YES;[self.view addSubview:self.hint];
- self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"JEDNODUCHÁ",@"VEDECKÁ",@"JEDNOTKY"]];
- self.tabs.selectedSegmentIndex=0;
- [self.tabs setEnabled:NO forSegmentAtIndex:1];[self.tabs setEnabled:NO forSegmentAtIndex:2];
- [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
- [self.view addSubview:self.tabs];
  self.displayPanel=[UIView new];self.displayPanel.backgroundColor=self.panel;self.displayPanel.layer.cornerRadius=14;
  self.displayPanel.layer.borderColor=[self.accent colorWithAlphaComponent:.28].CGColor;
  self.displayPanel.layer.borderWidth=1;[self.view addSubview:self.displayPanel];
@@ -59,18 +52,21 @@
  for(NSArray *row in rows)for(NSString *name in row){
   UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];
   [button setTitle:name forState:UIControlStateNormal];[button setTitleColor:self.pale forState:UIControlStateNormal];
-  button.titleLabel.font=[UIFont boldSystemFontOfSize:27];
+  button.titleLabel.font=[UIFont boldSystemFontOfSize:34];
   button.titleLabel.adjustsFontSizeToFitWidth=YES;
-  button.backgroundColor=self.face;button.layer.cornerRadius=10;
+  button.backgroundColor=self.face;button.layer.cornerRadius=8;
+  button.layer.borderWidth=.8;button.layer.borderColor=[[UIColor colorWithWhite:1 alpha:.08] CGColor];
   if([@[@"+",@"−",@"×",@"÷"] containsObject:name]){
-   button.backgroundColor=[UIColor colorWithRed:.035 green:.31 blue:.35 alpha:1];
+   button.backgroundColor=[UIColor colorWithRed:.015 green:.41 blue:.45 alpha:1];
+   button.titleLabel.font=[UIFont boldSystemFontOfSize:38];
    [button setTitleColor:self.accent forState:UIControlStateNormal];
   }else if([name isEqualToString:@"="]){
-   button.backgroundColor=self.accent;[button setTitleColor:self.bg forState:UIControlStateNormal];
-   button.titleLabel.font=[UIFont boldSystemFontOfSize:33];
+   button.backgroundColor=[UIColor colorWithRed:.98 green:.66 blue:.13 alpha:1];[button setTitleColor:self.bg forState:UIControlStateNormal];
+   button.titleLabel.font=[UIFont boldSystemFontOfSize:38];
   }else if([@[@"MC",@"MR",@"M+",@"M−",@"⌫",@"C",@"CE",@"%",@"√x",@"x²",@"1/x",@"ANS",@"±"] containsObject:name]){
-   button.titleLabel.font=[UIFont boldSystemFontOfSize:21];
-   [button setTitleColor:[UIColor colorWithRed:.96 green:.71 blue:.36 alpha:1] forState:UIControlStateNormal];
+   button.titleLabel.font=[UIFont boldSystemFontOfSize:27];
+   [button setTitleColor:[UIColor colorWithRed:.99 green:.78 blue:.43 alpha:1] forState:UIControlStateNormal];
+   button.backgroundColor=[UIColor colorWithRed:.065 green:.15 blue:.19 alpha:1];
   }
   button.accessibilityLabel=name;
   [button addTarget:self action:@selector(tap:) forControlEvents:UIControlEventTouchUpInside];
@@ -81,21 +77,22 @@
 - (void)viewDidLayoutSubviews {
  [super viewDidLayoutSubviews];
  CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height;
- CGFloat top=self.view.safeAreaInsets.top+8,bottom=self.view.safeAreaInsets.bottom,margin=14;
- self.heading.frame=CGRectMake(margin,top,w*.40,35);
- self.hint.frame=CGRectMake(w*.40,top+6,w*.58-margin,28);
- self.tabs.frame=CGRectMake(margin,top+42,w-2*margin,43);
- self.displayPanel.frame=CGRectMake(margin,top+94,w-2*margin,133);
+ CGFloat margin=10;
+ CGFloat gridWidth=MIN(w-2*margin,805);
+ CGFloat left=(w-gridWidth)/2;
+ self.displayPanel.frame=CGRectMake(left,4,gridWidth,117);
  CGFloat sw=self.displayPanel.bounds.size.width;
- self.expression.frame=CGRectMake(18,8,sw-35,29);
- self.display.frame=CGRectMake(18,30,sw-35,78);
- self.memoryIndicator.frame=CGRectMake(18,107,105,20);
- self.errorLabel.frame=CGRectMake(125,107,MAX(0,sw-140),20);
- CGFloat start=top+237,gap=8,available=MAX(260,h-bottom-start-12);
- CGFloat cellW=(w-2*margin-4*gap)/5,cellH=(available-5*gap)/6;
+ self.expression.frame=CGRectMake(18,5,sw-35,27);
+ self.display.frame=CGRectMake(18,21,sw-35,78);
+ self.memoryIndicator.frame=CGRectMake(18,96,110,18);
+ self.errorLabel.frame=CGRectMake(133,96,MAX(0,sw-150),18);
+ CGFloat start=133,gap=7;
+ CGFloat freeHeight=MAX(260,h-start-8);
+ CGFloat cellWidth=(gridWidth-4*gap)/5;
+ CGFloat cellHeight=MIN(69,(freeHeight-5*gap)/6);
  for(NSInteger i=0;i<self.buttons.count;i++){
   NSInteger row=i/5,col=i%5;
-  ((UIButton *)self.buttons[i]).frame=CGRectMake(margin+col*(cellW+gap),start+row*(cellH+gap),cellW,cellH);
+  ((UIButton *)self.buttons[i]).frame=CGRectMake(left+col*(cellWidth+gap),start+row*(cellHeight+gap),cellWidth,cellHeight);
  }
 }
 - (NSDecimalNumberHandler *)rule{
@@ -249,13 +246,52 @@
 }
 @end
 
+@interface TechCalcHost : UIViewController
+@property(nonatomic,strong) UISegmentedControl *modes;
+@property(nonatomic,strong) NSArray *pages;
+@end
+@implementation TechCalcHost
+- (void)viewDidLoad {
+ [super viewDidLoad];
+ self.view.backgroundColor=[UIColor colorWithRed:.018 green:.058 blue:.079 alpha:1];
+ self.modes=[[UISegmentedControl alloc] initWithItems:@[@"JEDNODUCHÁ",@"VEDECKÁ",@"JEDNOTKY"]];
+ self.modes.selectedSegmentIndex=0;
+ [self.modes setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
+ [self.modes addTarget:self action:@selector(switchMode) forControlEvents:UIControlEventValueChanged];
+ [self.view addSubview:self.modes];
+ self.pages=@[[TechCalcController new],[TCScientificController new],[TCUnitsController new]];
+ for(UIViewController *page in self.pages){
+  [self addChildViewController:page];
+  [self.view addSubview:page.view];
+  [page didMoveToParentViewController:self];
+ }
+ [self switchMode];
+}
+- (void)viewDidLayoutSubviews {
+ [super viewDidLayoutSubviews];
+ CGFloat top=self.view.safeAreaInsets.top+4,bottom=self.view.safeAreaInsets.bottom;
+ CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height;
+ self.modes.frame=CGRectMake(10,top,w-20,43);
+ CGFloat contentTop=top+48;
+ CGRect area=CGRectMake(0,contentTop,w,MAX(120,h-contentTop-bottom));
+ for(UIViewController *page in self.pages)page.view.frame=area;
+}
+- (void)switchMode {
+ for(NSInteger i=0;i<self.pages.count;i++) {
+  UIViewController *page=self.pages[i];
+  page.view.hidden=(i!=self.modes.selectedSegmentIndex);
+ }
+ [self.view endEditing:YES];
+}
+@end
+
 @interface TechCalcDelegate : UIResponder<UIApplicationDelegate>
 @property(strong,nonatomic) UIWindow *window;
 @end
 @implementation TechCalcDelegate
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts {
  self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
- self.window.rootViewController=[TechCalcController new];[self.window makeKeyAndVisible];return YES;
+ self.window.rootViewController=[TechCalcHost new];[self.window makeKeyAndVisible];return YES;
 }
 @end
 int main(int argc,char **argv){@autoreleasepool{return UIApplicationMain(argc,argv,nil,NSStringFromClass(TechCalcDelegate.class));}}
