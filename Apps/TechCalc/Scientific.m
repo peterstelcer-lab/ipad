@@ -19,7 +19,8 @@
 - (double)power;
 - (double)primary;
 - (double)calculate:(NSString *)s x:(double)x a:(double)a degrees:(BOOL)deg {
- self.s=[[s?:@"" stringByReplacingOccurrencesOfString:@"," withString:@"."] lowercaseString];
+ NSString *raw=s?:@"";
+ self.s=[[raw stringByReplacingOccurrencesOfString:@"," withString:@"."] lowercaseString];
  self.p=0;self.depth=0;self.error=NO;self.degrees=deg;self.x=x;self.a=a;
  if(self.s.length>256){self.error=YES;return NAN;}
  double result=[self expr];[self space];if(self.p!=self.s.length||!isfinite(result))self.error=YES;
@@ -257,7 +258,7 @@ static UIButton *TCButton(NSString *title,id target,SEL selector) {
  double x=[[self.xField.text stringByReplacingOccurrencesOfString:@"," withString:@"."] doubleValue];
  TCFormula *p=[TCFormula new];
  double res=[p calculate:self.formula.text x:x a:self.varA degrees:self.degrees];
- if(p.error||!isfinite(res)){self.result.text=@"Neplatný výraz";self.result.textColor=[UIColor colorWithRed:1 green:.5 blue:.4 alpha:1];return;}
+ if(p.error||!isfinite(res)){self.lastResult=NAN;self.result.text=@"Neplatný výraz";self.result.textColor=[UIColor colorWithRed:1 green:.5 blue:.4 alpha:1];return;}
  self.lastResult=res;self.result.text=[NSString stringWithFormat:@"= %.12g",res];
  self.result.textColor=UIColor.whiteColor;
  NSString *item=[NSString stringWithFormat:@"%@ = %.9g",self.formula.text,res];
@@ -267,6 +268,7 @@ static UIButton *TCButton(NSString *title,id target,SEL selector) {
 }
 - (void)plot {
  [self compute];
+ if(!isfinite(self.lastResult)) {self.graph.formula=@"";[self.graph setNeedsDisplay];return;}
  self.graph.formula=self.formula.text;
  self.graph.deg=self.degrees;self.graph.a=self.varA;self.graph.range=(double)self.graphRange;
  [self.graph setNeedsDisplay];
@@ -297,8 +299,9 @@ static UIButton *TCButton(NSString *title,id target,SEL selector) {
   if(!name.length)return;
   NSUserDefaults *defaults=NSUserDefaults.standardUserDefaults;
   NSMutableDictionary *stored=[[defaults dictionaryForKey:@"techcalc-formulas"] mutableCopy]?:[NSMutableDictionary dictionary];
-  if(stored.count>=40&&!stored[name])return;
-  stored[[name substringToIndex:MIN(name.length,40)]]=s;
+  NSString *safeName=[name substringToIndex:MIN(name.length,40)];
+  if(stored.count>=40&&!stored[safeName])return;
+  stored[safeName]=s;
   [defaults setObject:stored forKey:@"techcalc-formulas"];
  }]];
  [self presentViewController:alert animated:YES completion:nil];
