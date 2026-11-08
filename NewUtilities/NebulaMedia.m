@@ -125,11 +125,11 @@
  else playingIndex=(playingIndex+playlist.count+d)%playlist.count;
  [self playPath:playlist[playingIndex]];
 }
--(void)seekBegin:(UISlider*s){seeking=YES;}
--(void)seekChanged:(UISlider*s){
+-(void)seekBegin:(UISlider*)s{seeking=YES;}
+-(void)seekChanged:(UISlider*)s{
  if(vlc.isSeekable)vlc.position=s.value;
 }
--(void)seekEnd:(UISlider*s){if(vlc.isSeekable)vlc.position=s.value;seeking=NO;}
+-(void)seekEnd:(UISlider*)s{if(vlc.isSeekable)vlc.position=s.value;seeking=NO;}
 -(NSString*)clock:(NSInteger)ms{
  if(ms<0)ms=0;NSInteger n=ms/1000;
  return [NSString stringWithFormat:@"%02ld:%02ld",(long)(n/60),(long)(n%60)];
