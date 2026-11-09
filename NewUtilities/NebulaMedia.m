@@ -99,11 +99,11 @@
  filename.frame=CGRectMake(nameStart,t+4,nameWidth,23);
  timeLabel.frame=CGRectMake(nameStart,t+26,nameWidth,22);
  timeline.frame=CGRectMake(28,6,w-56,33);
- CGFloat gap=(w<620)?8:14,diam=MIN(66,(w-28-5*gap)/6);
- CGFloat total=diam*6+gap*5,left=(w-total)*0.5,y=toolbarH-69;
+ CGFloat transportGap=(w<620)?8:14,diam=MIN(66,(w-28-5*transportGap)/6);
+ CGFloat total=diam*6+transportGap*5,left=(w-total)*0.5,transportY=toolbarH-69;
  NSArray*transport=@[previousBtn,rewindBtn,stopBtn,playBtn,forwardBtn,nextBtn];
  for(NSInteger i=0;i<transport.count;i++){
-  UIButton*btn=transport[i];btn.frame=CGRectMake(left+i*(diam+gap),y,diam,diam);
+  UIButton*btn=transport[i];btn.frame=CGRectMake(left+i*(diam+transportGap),transportY,diam,diam);
   btn.layer.cornerRadius=diam*0.5;
  }
  swipeIndicator.frame=CGRectMake(MAX(16,(w-210)*0.5),MAX(24,(h-92)*0.5),210,92);
