@@ -1,12 +1,17 @@
 #import "Shared.h"
 #import <AVFoundation/AVFoundation.h>
+#import <MediaPlayer/MediaPlayer.h>
+#import <math.h>
 #import <MobileVLCKit/MobileVLCKit.h>
 @interface V:UIViewController<UITableViewDelegate,UITableViewDataSource,UIDocumentPickerDelegate,VLCMediaPlayerDelegate>{
  NSString*folder,*currentPath;NSArray*files,*playlist;
  UITableView*list;UILabel*title,*location,*info;
  NSArray*buttons;UIView*playerScreen,*videoSurface,*controlPanel,*topPanel;
- UILabel*filename,*timeLabel;UIButton*backBtn,*playBtn,*stopBtn,*rewindBtn,*forwardBtn,*previousBtn,*nextBtn,*modeBtn;
+ UILabel*filename,*timeLabel;UIButton*backBtn,*playBtn,*stopBtn,*rewindBtn,*forwardBtn,*previousBtn,*nextBtn,*modeBtn,*audioBtn,*speedBtn;
  UISlider*timeline;VLCMediaPlayer*vlc;NSTimer*ticker;BOOL seeking,controlsVisible;NSUInteger playingIndex;NSInteger screenMode;
+ MPVolumeView*volumeView;UISlider*volumeSlider;
+ UILabel*swipeIndicator;CGFloat touchStartY,startBrightness,startVolume;
+ BOOL swipeIsBrightness;float chosenRate;
 }
 @end
 @implementation V
@@ -14,7 +19,7 @@
  [super viewDidLoad];
  self.view.backgroundColor=C(0x07131D);
  folder=Shared();
- title=L(@"NEBULA MEDIA PLAYER   V3",23);title.textAlignment=NSTextAlignmentCenter;title.font=[UIFont boldSystemFontOfSize:23];[self.view addSubview:title];
+ title=L(@"NEBULA MEDIA PLAYER   V4",23);title.textAlignment=NSTextAlignmentCenter;title.font=[UIFont boldSystemFontOfSize:23];[self.view addSubview:title];
  location=L(folder,12);location.textColor=C(0x42D5BE);[self.view addSubview:location];
  list=[[UITableView alloc]initWithFrame:CGRectZero style:UITableViewStylePlain];list.delegate=self;list.dataSource=self;list.backgroundColor=C(0x152E3D);list.separatorColor=C(0x24495A);list.rowHeight=51;list.layer.cornerRadius=10;list.tableFooterView=[UIView new];[self.view addSubview:list];
  NSArray*names=@[@"↑ IMPORT",@"⌂ ZDIEĽANÉ",@"▤ MÉDIÁ IPADU",@"⌖ CESTA",@"↻ OBNOVIŤ"];
@@ -24,8 +29,10 @@
  videoSurface=[UIView new];videoSurface.backgroundColor=UIColor.blackColor;[playerScreen addSubview:videoSurface];
  UITapGestureRecognizer*tap=[[UITapGestureRecognizer alloc]initWithTarget:self action:@selector(toggleControls)];[videoSurface addGestureRecognizer:tap];
  UITapGestureRecognizer*doubleTap=[[UITapGestureRecognizer alloc]initWithTarget:self action:@selector(changeMode)];doubleTap.numberOfTapsRequired=2;[videoSurface addGestureRecognizer:doubleTap];[tap requireGestureRecognizerToFail:doubleTap];
- topPanel=[UIView new];topPanel.backgroundColor=[C(0x08151E) colorWithAlphaComponent:0.89];[playerScreen addSubview:topPanel];
- controlPanel=[UIView new];controlPanel.backgroundColor=[C(0x0D202A) colorWithAlphaComponent:0.90];[playerScreen addSubview:controlPanel];
+ UIPanGestureRecognizer*swipe=[[UIPanGestureRecognizer alloc]initWithTarget:self action:@selector(verticalSwipe:)];
+ swipe.maximumNumberOfTouches=1;[videoSurface addGestureRecognizer:swipe];
+ topPanel=[UIView new];topPanel.backgroundColor=[C(0x08151E) colorWithAlphaComponent:0.27];[playerScreen addSubview:topPanel];
+ controlPanel=[UIView new];controlPanel.backgroundColor=[C(0x0D202A) colorWithAlphaComponent:0.27];[playerScreen addSubview:controlPanel];
  filename=L(@"",16);filename.font=[UIFont boldSystemFontOfSize:16];filename.textAlignment=NSTextAlignmentCenter;[topPanel addSubview:filename];
  timeLabel=L(@"00:00 / 00:00",12);timeLabel.textColor=C(0x42D5BE);timeLabel.textAlignment=NSTextAlignmentCenter;[topPanel addSubview:timeLabel];
  timeline=[UISlider new];timeline.minimumValue=0;timeline.maximumValue=1;timeline.minimumTrackTintColor=C(0x42D5BE);
@@ -34,15 +41,33 @@
  [timeline addTarget:self action:@selector(seekEnd:) forControlEvents:UIControlEventTouchUpInside|UIControlEventTouchUpOutside|UIControlEventTouchCancel];
  [controlPanel addSubview:timeline];
  backBtn=B(@"✕  ZAVRIEŤ",self,@selector(closePlayer),0);[topPanel addSubview:backBtn];
- modeBtn=B(@"▣  POMER",self,@selector(changeMode),0);[topPanel addSubview:modeBtn];modeBtn.accessibilityLabel=@"Prepnúť pomer strán";
+ modeBtn=B(@"▣ POMER",self,@selector(changeMode),0);[topPanel addSubview:modeBtn];modeBtn.accessibilityLabel=@"Prepnúť pomer strán";
+ audioBtn=B(@"♫ STOPA",self,@selector(chooseAudioTrack),0);[topPanel addSubview:audioBtn];audioBtn.accessibilityLabel=@"Výber zvukovej stopy";
+ speedBtn=B(@"1× RÝCHL.",self,@selector(chooseRate),0);[topPanel addSubview:speedBtn];speedBtn.accessibilityLabel=@"Rýchlosť prehrávania";
+ for(UIButton*b in @[backBtn,modeBtn,audioBtn,speedBtn]){
+  b.backgroundColor=[[UIColor blackColor]colorWithAlphaComponent:0.18];
+  b.layer.borderWidth=1;b.layer.borderColor=[UIColor colorWithWhite:1 alpha:0.32].CGColor;
+  [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+ }
  previousBtn=B(@"|◀",self,@selector(previous),0);[controlPanel addSubview:previousBtn];previousBtn.accessibilityLabel=@"Predchádzajúci súbor";
  rewindBtn=B(@"◀◀",self,@selector(rewind15),0);[controlPanel addSubview:rewindBtn];rewindBtn.accessibilityLabel=@"O pätnásť sekúnd späť";
  stopBtn=B(@"■",self,@selector(stopPlayback),0);[controlPanel addSubview:stopBtn];stopBtn.accessibilityLabel=@"Stop";
  playBtn=B(@"Ⅱ",self,@selector(playPause),0);[controlPanel addSubview:playBtn];playBtn.accessibilityLabel=@"Prehrať alebo pozastaviť";
  forwardBtn=B(@"▶▶",self,@selector(forward15),0);[controlPanel addSubview:forwardBtn];forwardBtn.accessibilityLabel=@"O pätnásť sekúnd vpred";
  nextBtn=B(@"▶|",self,@selector(next),0);[controlPanel addSubview:nextBtn];nextBtn.accessibilityLabel=@"Nasledujúci súbor";
- for(UIButton*b in @[previousBtn,rewindBtn,stopBtn,playBtn,forwardBtn,nextBtn]){b.titleLabel.font=[UIFont boldSystemFontOfSize:32];b.layer.cornerRadius=12;b.backgroundColor=C(0x173D4D);}
- playBtn.backgroundColor=C(0x056A69);controlsVisible=YES;screenMode=0;
+ for(UIButton*b in @[previousBtn,rewindBtn,stopBtn,playBtn,forwardBtn,nextBtn]){
+  b.titleLabel.font=[UIFont boldSystemFontOfSize:29];
+  b.backgroundColor=[[UIColor blackColor]colorWithAlphaComponent:0.18];
+  b.layer.borderWidth=1.4;b.layer.borderColor=[UIColor colorWithWhite:1 alpha:0.45].CGColor;
+  [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+ }
+ playBtn.layer.borderColor=C(0x43E0CA).CGColor;playBtn.layer.borderWidth=2.5;
+ controlsVisible=YES;screenMode=0;chosenRate=1.0f;
+ swipeIndicator=L(@"",24);swipeIndicator.backgroundColor=[[UIColor blackColor]colorWithAlphaComponent:0.60];
+ swipeIndicator.textAlignment=NSTextAlignmentCenter;swipeIndicator.layer.cornerRadius=14;swipeIndicator.clipsToBounds=YES;
+ swipeIndicator.hidden=YES;[playerScreen addSubview:swipeIndicator];
+ volumeView=[MPVolumeView new];volumeView.showsRouteButton=NO;volumeView.showsVolumeSlider=YES;
+ volumeView.alpha=0.02;[playerScreen addSubview:volumeView];
  vlc=[VLCMediaPlayer new];vlc.delegate=self;vlc.drawable=videoSurface;
  [[AVAudioSession sharedInstance]setCategory:AVAudioSessionCategoryPlayback error:nil];
  ticker=[NSTimer scheduledTimerWithTimeInterval:0.5 target:self selector:@selector(tick) userInfo:nil repeats:YES];
@@ -62,19 +87,27 @@
 
  playerScreen.frame=self.view.bounds;
  videoSurface.frame=playerScreen.bounds; // obraz je pod panelmi na CELEJ obrazovke
- CGFloat toolbarH=(w<h)?180:164;
- topPanel.frame=CGRectMake(0,0,w,t+59);
+ CGFloat toolbarH=(w<h)?139:112;
+ topPanel.frame=CGRectMake(0,0,w,t+53);
  controlPanel.frame=CGRectMake(0,h-toolbarH-b,w,toolbarH+b);
- backBtn.frame=CGRectMake(12,t+8,114,43);
- modeBtn.frame=CGRectMake(w-154,t+8,142,43);
- filename.frame=CGRectMake(138,t+3,MAX(80,w-308),31);
- filename.textAlignment=NSTextAlignmentCenter;
- timeLabel.frame=CGRectMake(138,t+33,MAX(80,w-308),22);
- timeline.frame=CGRectMake(24,9,w-48,37);
- CGFloat sp=10,btnW=MIN(110,(w-30-5*sp)/6);
- CGFloat total=btnW*6+sp*5,left=(w-total)/2,by=toolbarH-91;
+ backBtn.frame=CGRectMake(11,t+9,98,38);
+ CGFloat right=10,buttonGap=6,extraWidth=99;
+ speedBtn.frame=CGRectMake(w-right-extraWidth,t+9,extraWidth,38);
+ audioBtn.frame=CGRectMake(w-right-extraWidth*2-buttonGap,t+9,extraWidth,38);
+ modeBtn.frame=CGRectMake(w-right-extraWidth*3-buttonGap*2,t+9,extraWidth,38);
+ CGFloat nameStart=117,nameWidth=MAX(70,CGRectGetMinX(modeBtn.frame)-nameStart-10);
+ filename.frame=CGRectMake(nameStart,t+4,nameWidth,23);
+ timeLabel.frame=CGRectMake(nameStart,t+26,nameWidth,22);
+ timeline.frame=CGRectMake(28,6,w-56,33);
+ CGFloat gap=(w<620)?8:14,diam=MIN(66,(w-28-5*gap)/6);
+ CGFloat total=diam*6+gap*5,left=(w-total)*0.5,y=toolbarH-69;
  NSArray*transport=@[previousBtn,rewindBtn,stopBtn,playBtn,forwardBtn,nextBtn];
- for(NSInteger i=0;i<transport.count;i++){UIButton*btn=transport[i];btn.frame=CGRectMake(left+i*(btnW+sp),by,btnW,72);}
+ for(NSInteger i=0;i<transport.count;i++){
+  UIButton*btn=transport[i];btn.frame=CGRectMake(left+i*(diam+gap),y,diam,diam);
+  btn.layer.cornerRadius=diam*0.5;
+ }
+ swipeIndicator.frame=CGRectMake(MAX(16,(w-210)*0.5),MAX(24,(h-92)*0.5),210,92);
+ volumeView.frame=CGRectMake(1,1,1,1);
  [self updateVideoRatio];
 
 }
