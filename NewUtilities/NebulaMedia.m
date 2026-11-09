@@ -156,10 +156,11 @@
  VLCMedia*media=[VLCMedia mediaWithPath:s];
  if(!media){A(self,@"Neplatný súbor",@"Nedá sa vytvoriť video stopa.");return;}
  vlc.drawable=videoSurface;vlc.media=media;
- [vlc play];[playBtn setTitle:@"Ⅱ" forState:UIControlStateNormal];[self updateVideoRatio];[self setNeedsStatusBarAppearanceUpdate];
+ [vlc play];vlc.rate=chosenRate;[playBtn setTitle:@"Ⅱ" forState:UIControlStateNormal];[self updateVideoRatio];[self setControls:YES schedule:YES];[self setNeedsStatusBarAppearanceUpdate];
 }
 -(void)closePlayer{
  [vlc stop];playerScreen.hidden=YES;[UIApplication sharedApplication].idleTimerDisabled=NO;
+ [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideSwipeIndicator) object:nil];swipeIndicator.hidden=YES;
  [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(autoHideControls) object:nil];
  [self setNeedsStatusBarAppearanceUpdate];
 }
@@ -167,9 +168,9 @@
 -(void)setControls:(BOOL)show schedule:(BOOL)sched{
  controlsVisible=show;topPanel.hidden=!show;controlPanel.hidden=!show;
  [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(autoHideControls) object:nil];
- if(show&&sched&&vlc.isPlaying)[self performSelector:@selector(autoHideControls) withObject:nil afterDelay:5.0];
+ if(show&&sched)[self performSelector:@selector(autoHideControls) withObject:nil afterDelay:5.0];
 }
--(void)autoHideControls{if(!playerScreen.hidden&&vlc.isPlaying&&!seeking)[self setControls:NO schedule:NO];}
+-(void)autoHideControls{if(!playerScreen.hidden&&!seeking&&self.presentedViewController==nil)[self setControls:NO schedule:NO];}
 -(void)toggleControls{[self setControls:!controlsVisible schedule:YES];}
 -(void)changeMode{screenMode=(screenMode+1)%3;[self updateVideoRatio];[self setControls:YES schedule:YES];}
 -(void)updateVideoRatio{
@@ -179,6 +180,81 @@
  if(screenMode==0){vlc.videoCropGeometry=NULL;vlc.videoAspectRatio=NULL;[modeBtn setTitle:@"▣ POMER" forState:UIControlStateNormal];}
  else if(screenMode==1){vlc.videoAspectRatio=NULL;vlc.videoCropGeometry=aspect;[modeBtn setTitle:@"⛶ VYPLNIŤ" forState:UIControlStateNormal];}
  else{vlc.videoCropGeometry=NULL;vlc.videoAspectRatio=aspect;[modeBtn setTitle:@"⬌ ROZTIAH." forState:UIControlStateNormal];}
+}
+
+-(void)chooseAudioTrack{
+ [self setControls:YES schedule:NO];
+ NSArray*names=vlc.audioTrackNames;
+ NSArray*indexes=vlc.audioTrackIndexes;
+ NSUInteger count=MIN(names.count,indexes.count);
+ if(count==0){A(self,@"Zvuková stopa",@"Nenašla sa žiadna zvuková stopa. Skús voľbu po začatí prehrávania.");[self setControls:YES schedule:YES];return;}
+ UIAlertController*sheet=[UIAlertController alertControllerWithTitle:@"Zvukové stopy" message:@"Vyber zvukovú stopu videa" preferredStyle:UIAlertControllerStyleAlert];
+ int current=vlc.currentAudioTrackIndex;
+ for(NSUInteger i=0;i<count;i++){
+  int ident=[indexes[i] intValue];
+  NSString*name=[names[i] description];
+  if(!name.length)name=[NSString stringWithFormat:@"Stopa %lu",(unsigned long)(i+1)];
+  NSString*item=[NSString stringWithFormat:@"%@%@",ident==current?@"✓  ":@"",name];
+  [sheet addAction:[UIAlertAction actionWithTitle:item style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){
+   self->vlc.currentAudioTrackIndex=ident;
+   [self setControls:YES schedule:YES];
+  }]];
+ }
+ [sheet addAction:[UIAlertAction actionWithTitle:@"Zrušiť" style:UIAlertActionStyleCancel handler:^(UIAlertAction*x){[self setControls:YES schedule:YES];}]];
+ [self presentViewController:sheet animated:YES completion:nil];
+}
+-(void)chooseRate{
+ [self setControls:YES schedule:NO];
+ UIAlertController*sheet=[UIAlertController alertControllerWithTitle:@"Rýchlosť prehrávania" message:@"Pri vysokých rýchlostiach môže starší iPad vynechávať obraz alebo zvuk." preferredStyle:UIAlertControllerStyleAlert];
+ NSArray*rates=@[@0.5,@1,@1.5,@2,@4,@6,@8,@16,@32];
+ for(NSNumber*r in rates){
+  float rate=r.floatValue;
+  NSString*name=[NSString stringWithFormat:@"%@  %g×",fabsf(rate-chosenRate)<0.01f?@"✓":@"",rate];
+  [sheet addAction:[UIAlertAction actionWithTitle:name style:UIAlertActionStyleDefault handler:^(UIAlertAction*x){
+   self->chosenRate=rate;self->vlc.rate=rate;
+   [self->speedBtn setTitle:[NSString stringWithFormat:@"%g× RÝCHL.",rate] forState:UIControlStateNormal];
+   [self setControls:YES schedule:YES];
+  }]];
+ }
+ [sheet addAction:[UIAlertAction actionWithTitle:@"Zrušiť" style:UIAlertActionStyleCancel handler:^(UIAlertAction*x){[self setControls:YES schedule:YES];}]];
+ [self presentViewController:sheet animated:YES completion:nil];
+}
+-(UISlider*)findVolumeSlider:(UIView*)view{
+ if([view isKindOfClass:UISlider.class])return(UISlider*)view;
+ for(UIView*subview in view.subviews){UISlider*s=[self findVolumeSlider:subview];if(s)return s;}
+ return nil;
+}
+-(void)showSwipeValue:(NSString*)s{
+ swipeIndicator.text=s;swipeIndicator.hidden=NO;
+ [playerScreen bringSubviewToFront:swipeIndicator];
+ [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideSwipeIndicator) object:nil];
+ [self performSelector:@selector(hideSwipeIndicator) withObject:nil afterDelay:1.0];
+}
+-(void)hideSwipeIndicator{swipeIndicator.hidden=YES;}
+-(void)verticalSwipe:(UIPanGestureRecognizer*)g{
+ CGPoint pt=[g locationInView:videoSurface];
+ if(g.state==UIGestureRecognizerStateBegan){
+  touchStartY=pt.y;swipeIsBrightness=pt.x<videoSurface.bounds.size.width*0.5;
+  startBrightness=UIScreen.mainScreen.brightness;
+  volumeSlider=[self findVolumeSlider:volumeView];
+  startVolume=volumeSlider?volumeSlider.value:0;
+ }else if(g.state==UIGestureRecognizerStateChanged){
+  CGFloat change=(touchStartY-pt.y)/MAX(120.0,videoSurface.bounds.size.height*0.70);
+  if(swipeIsBrightness){
+   CGFloat value=MAX(0.02,MIN(1.0,startBrightness+change));
+   UIScreen.mainScreen.brightness=value;
+   [self showSwipeValue:[NSString stringWithFormat:@"☀ Jas %d%%",(int)round(value*100)]];
+  }else if(volumeSlider){
+   float value=MAX(0.f,MIN(1.f,startVolume+change));
+   [volumeSlider setValue:value animated:NO];
+   [volumeSlider sendActionsForControlEvents:UIControlEventTouchUpInside];
+   [self showSwipeValue:[NSString stringWithFormat:@"♫ Hlasitosť %d%%",(int)round(value*100)]];
+  }else{
+   [self showSwipeValue:@"Hlasitosť nie je dostupná"];
+  }
+ }else if(g.state==UIGestureRecognizerStateEnded||g.state==UIGestureRecognizerStateCancelled){
+  [self setControls:controlsVisible schedule:YES];
+ }
 }
 -(void)jumpSeconds:(NSInteger)sec{
  if(!vlc.isSeekable)return;
