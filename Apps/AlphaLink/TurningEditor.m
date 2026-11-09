@@ -120,7 +120,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (void)viewDidLoad {
  [super viewDidLoad];self.view.backgroundColor=TBG();
  UIButton *back=[self button:@"‹ SPÄŤ" action:@selector(close)];back.tag=900;[self.view addSubview:back];
- UILabel *heading=[self label:@"AlphaLink CAM iPad V1.5 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
+ UILabel *heading=[self label:@"AlphaLink CAM iPad V1.6 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
  self.status=[self label:@"NOVÝ NÁVRH • geometria bude overená Raspberry Pi"];self.status.tag=902;[self.view addSubview:self.status];
  self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"ZADANIE",@"OPERÁCIE",@"2D NÁHĽAD",@"G-KÓD",@"NÁVRHY"]];self.tabs.selectedSegmentIndex=0;
  [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
@@ -536,9 +536,26 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
   if(e || ![j[@"code"] isKindOfClass:NSString.class] || ![j[@"code"] length]){
    [self showError:e.localizedDescription?:@"Generovanie CAM programu sa nepodarilo."];return;
   }
-  self.gcode.text=j[@"code"];self.codeName.text=TString(j[@"name"]).length?j[@"name"]:self.nameField.text;
-  self.status.text=@"CAM .600 vygenerovaný serverom. Pred obrábaním over všetky pohyby a korekcie.";
+  if(![j[@"sendable"] boolValue] || ![TString(j[@"format"]) isEqualToString:@"ALPHA400-CAM-600"]){
+   [self showError:@"Raspberry Pi nepotvrdilo strojový formát ALPHA400-CAM-600 a sendable=true. Program nebude použitý."];
+   return;
+  }
+  NSString *cam=j[@"code"];
+  NSArray *lines=[cam componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet];
+  NSString *header=lines.count?TString(lines[0]):@"";
+  NSString *az=lines.count>1?TString(lines[1]):@"";
+  if(![header hasPrefix:@"O"] || ![az isEqualToString:@"(AZ PS)"]){
+   [self showError:@"CAM generátor nevrátil hlavičku O#### / (AZ PS). Uloženie je zastavené."];
+   return;
+  }
+  self.gcode.text=cam;self.codeName.text=TString(j[@"name"]).length?j[@"name"]:self.nameField.text;
+  self.status.text=@"CAM V34: serverový .600, G00 len na predpokladanej voľnej dráhe; skontroluj X/Z, skľučovadlo a korekcie.";
   [self showTab:3];
+  NSArray *warnings=[j[@"warnings"] isKindOfClass:NSArray.class]?j[@"warnings"]:@[];
+  if(warnings.count) {
+   NSString *text=[warnings componentsJoinedByString:@"\n• "];
+   [self showError:[NSString stringWithFormat:@"Upozornenia generátora V34 (nie sú dôkazom bezpečnosti dráhy):\n• %@",text]];
+  }
  }];
 }
 - (void)saveCode {
@@ -551,7 +568,12 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  [a addAction:[UIAlertAction actionWithTitle:@"ULOŽIŤ" style:UIAlertActionStyleDefault handler:^(UIAlertAction *aa){
   [self request:@"/api/turning/cam-save" body:@{@"name":name,@"text":self.gcode.text} finished:^(NSDictionary *j,NSError *e){
    if(e){[self showError:e.localizedDescription];return;}
-   self.status.text=[NSString stringWithFormat:@"CAM program %@.600 uložený na Raspberry Pi.",name];
+   NSDictionary *validation=[j[@"validation"] isKindOfClass:NSDictionary.class]?j[@"validation"]:nil;
+   if(![j[@"stored"] boolValue] || ![validation[@"valid"] boolValue]){
+    [self showError:@"Server nepotvrdil uloženie a validáciu CAM programu. Skontroluj knižnicu na Raspberry Pi."];
+    return;
+   }
+   self.status.text=[NSString stringWithFormat:@"CAM program %@ uložený a overený na Raspberry Pi.",TString(j[@"name"])];
   }];
  }]];
  [self presentViewController:a animated:YES completion:nil];
