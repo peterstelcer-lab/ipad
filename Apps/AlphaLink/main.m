@@ -202,6 +202,71 @@
   [self refreshFiles];
  }];
 }
+- (void)stageAndSendAlpha:(NSString *)name {
+ if(self.machineMode!=2 || ![self.connectedBase isEqualToString:[self base]] || ![self.selected isEqualToString:name] || self.dirty)return;
+ self.status.text=@"ALPHALINK • pripravujem prenosovú frontu...";
+ [self request:@"POST" path:@"/api/queue/stage" body:@{@"name":name} done:^(NSDictionary *queued,NSError *queueError){
+  if(queueError){[self failure:queued error:queueError];return;}
+  NSDictionary *stage=[queued[@"queue"] isKindOfClass:NSDictionary.class]?queued[@"queue"]:nil;
+  NSString *stagedName=[stage[@"name"] isKindOfClass:NSString.class]?stage[@"name"]:@"";
+  NSString *digest=[stage[@"sha256"] isKindOfClass:NSString.class]?stage[@"sha256"]:@"";
+  if(![stagedName isEqualToString:name] || digest.length!=64) {
+   [self alert:@"Raspberry Pi nepotvrdilo súbor a jeho SHA-256 vo fronte. Prenos nebol spustený."];
+   return;
+  }
+  [self request:@"POST" path:@"/api/send" body:@{@"name":name,@"force":@NO} done:^(NSDictionary *sent,NSError *sendError){
+   if(sendError) {
+    if([sendError.domain isEqualToString:@"HTTP"] && sendError.code==409) {
+     NSMutableString *message=[NSMutableString stringWithString:@"Raspberry Pi odmietlo odoslanie ešte pred sériovým prenosom (HTTP 409)."];
+     NSString *reason=[sent[@"error"] isKindOfClass:NSString.class]?sent[@"error"]:nil;
+     if(reason.length)[message appendFormat:@"\n\n%@",reason];
+     NSDictionary *validation=[sent[@"validation"] isKindOfClass:NSDictionary.class]?sent[@"validation"]:nil;
+     NSArray *errors=[validation[@"errors"] isKindOfClass:NSArray.class]?validation[@"errors"]:@[];
+     for(id item in errors)if([item isKindOfClass:NSString.class])[message appendFormat:@"\n• %@",item];
+     [self alert:message];
+    } else [self failure:sent error:sendError];
+    self.status.text=@"ALPHALINK • prenos odmietnutý pred strojom";
+    return;
+   }
+   if(![sent[@"started"] boolValue]){
+    [self alert:@"Server nevrátil potvrdenie started=true. Prenos sa nepovažuje za spustený."];
+    return;
+   }
+   self.status.text=[NSString stringWithFormat:@"ALPHALINK • prenos %@ spustený",name];
+   [self pollJob];
+  }];
+ }];
+}
+- (void)sendAlphaValidated:(NSString *)name {
+ if(self.machineMode!=2 || ![self.selected isEqualToString:name] || self.dirty)return;
+ NSString *escaped=[name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+ self.status.text=@"ALPHALINK • kontrolujem súbor .600 na Raspberry Pi...";
+ [self request:@"GET" path:[@"/api/validate?name=" stringByAppendingString:escaped] body:nil done:^(NSDictionary *reply,NSError *err){
+  if(err){[self failure:reply error:err];return;}
+  NSDictionary *validation=[reply[@"validation"] isKindOfClass:NSDictionary.class]?reply[@"validation"]:nil;
+  if(!validation){[self alert:@"Server nevrátil výsledok validácie .600. Prenos je zastavený."];return;}
+  NSArray *errors=[validation[@"errors"] isKindOfClass:NSArray.class]?validation[@"errors"]:@[];
+  if(![validation[@"valid"] boolValue]){
+   NSMutableString *detail=[NSMutableString stringWithFormat:@"Program %@ neprešiel kontrolou na Raspberry Pi. Do stroja sa nič neodoslalo.",name];
+   for(id item in errors)if([item isKindOfClass:NSString.class])[detail appendFormat:@"\n• %@",item];
+   [self alert:detail];self.status.text=@"ALPHALINK • neplatný program";return;
+  }
+  NSArray *warnings=[validation[@"warnings"] isKindOfClass:NSArray.class]?validation[@"warnings"]:@[];
+  if(warnings.count){
+   NSMutableString *message=[NSMutableString stringWithString:@"Raspberry Pi našlo upozornenia formátu. Pred prenosom ich musíš skontrolovať:"];
+   for(id warning in warnings)if([warning isKindOfClass:NSString.class])[message appendFormat:@"\n• %@",warning];
+   [message appendString:@"\n\nPreniesť napriek upozorneniam?"];
+   UIAlertController *warningDialog=[UIAlertController alertControllerWithTitle:@"Kontrola CAM programu" message:message preferredStyle:UIAlertControllerStyleAlert];
+   [warningDialog addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+   [warningDialog addAction:[UIAlertAction actionWithTitle:@"POKRAČOVAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+    [self stageAndSendAlpha:name];
+   }]];
+   [self presentViewController:warningDialog animated:YES completion:nil];
+   return;
+  }
+  [self stageAndSendAlpha:name];
+ }];
+}
 - (void)sendSelected {
  if(![self isReady])return;
  if(!self.selected.length){[self alert:@"Vyber program na Raspberry Pi."];return;}
@@ -216,16 +281,13 @@
  [a addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
  [a addAction:[UIAlertAction actionWithTitle:@"ODOSLAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
    if(![self isReady] || self.machineMode!=mode || ![self.selected isEqualToString:name])return;
-   NSString *path=(mode==2?@"/api/send":@"/api/cnc/send");
-   NSDictionary *body=(mode==2?@{@"name":name,@"force":@NO}:@{@"name":name});
-   [self request:@"POST" path:path body:body done:^(NSDictionary *j,NSError *e){
-    if(e || (mode==1 && ![j[@"ok"] boolValue])) {
-      if(mode==2 && [e.domain isEqualToString:@"HTTP"] && e.code==409) {
-        [self alert:@"AlphaLink odmietol prenos pri validácii (HTTP 409). Oprav program v editore. Neoverený RAW prenos nie je povolený."];
-      }else [self failure:j error:e];
-      return;
-    }
-    self.status.text=[NSString stringWithFormat:@"%@ • prenos spustený",mode==2?@"ALPHALINK":@"NUM 1040"];
+   if(mode==2) {
+    [self sendAlphaValidated:name];
+    return;
+   }
+   [self request:@"POST" path:@"/api/cnc/send" body:@{@"name":name} done:^(NSDictionary *j,NSError *e){
+    if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;}
+    self.status.text=@"NUM 1040 • prenos spustený";
     [self pollJob];
    }];
  }]];
@@ -276,7 +338,12 @@
   }
   self.status.text=[NSString stringWithFormat:@"%@ • %@%% • %@",mode==2?@"ALPHALINK":@"NUM 1040",progress,message];
   if(active)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{if(self.machineMode==mode)[self pollJob];});
-  else [self refreshFiles];
+  else {
+   if(mode==2 && [job[@"finished"] length] && ![job[@"ok"] boolValue]) {
+    [self alert:[NSString stringWithFormat:@"Raspberry Pi hlási chybu sériového prenosu:\n%@",message]];
+   }
+   [self refreshFiles];
+  }
  }];
 }
 @end
