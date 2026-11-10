@@ -620,7 +620,25 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  return @{@"stock":@{@"diameter":@(dia),@"length":@(l0)},@"finished_length":@(len),@"profile":out,@"partoffs":parts};
 }
 - (void)localPreview {
- self.preview.operations=[self.operations copy];
+ // Match Pi V34's geometry_in_finished_frame for dimension placement.
+ // Operations measured from the RAW face shift after a separate FACE cut.
+ double face=0;
+ for(NSDictionary *op in self.operations)if([TString(op[@"type"]) isEqualToString:@"face"]){face=TNumber(op[@"amount"],0);break;}
+ NSMutableArray *labels=[NSMutableArray array];
+ for(NSDictionary *op in self.operations){
+  NSString *kind=TString(op[@"type"]);if([kind isEqualToString:@"face"])continue;
+  NSMutableDictionary *converted=[op mutableCopy];
+  double shift=[TString(op[@"frame"]) isEqualToString:@"faced"]?0:face;
+  for(NSString *key in @[@"z",@"zStart",@"zEnd"]){
+   if(converted[key])converted[key]=@(TNumber(converted[key],0)-shift);
+  }
+  double end=TNumber(converted[@"zEnd"],TNumber(converted[@"z"],0));
+  if(([@[@"diameter",@"taper"] containsObject:kind] && end<=0)
+      || ([@[@"radius",@"chamfer"] containsObject:kind] && TNumber(converted[@"z"],0)<0))continue;
+  if(converted[@"zStart"]&&TNumber(converted[@"zStart"],0)<0)converted[@"zStart"]=@0;
+  [labels addObject:converted];
+ }
+ self.preview.operations=labels;
  if(self.verifiedModel){self.preview.shape=self.verifiedModel;self.preview.verified=YES;}
  else {self.preview.shape=[self localModel:[self projectWith:self.operations]];self.preview.verified=NO;}
  [self.preview setNeedsDisplay];
