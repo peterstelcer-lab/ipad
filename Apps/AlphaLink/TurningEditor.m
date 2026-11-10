@@ -25,118 +25,288 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 
 @interface CNCProfileView:UIView
 @property(nonatomic,strong) NSDictionary *shape;
+@property(nonatomic,strong) NSArray *operations;
 @property(nonatomic,assign) BOOL verified;
 @end
 @implementation CNCProfileView
+// V1.9: full-diameter dimensioned turning drawing, derived only from stored geometry.
+// The preview is NOT a machining simulation or tool/chuck collision verification.
+- (UIColor *)clr:(CGFloat)r g:(CGFloat)g b:(CGFloat)b {return [UIColor colorWithRed:r green:g blue:b alpha:1];}
+- (void)label:(NSString *)value at:(CGPoint)pt size:(CGFloat)size color:(UIColor *)color bold:(BOOL)bold {
+ if(!value.length)return;
+ [value drawAtPoint:pt withAttributes:@{NSFontAttributeName:bold?[UIFont boldSystemFontOfSize:size]:[UIFont systemFontOfSize:size],
+ NSForegroundColorAttributeName:color}];
+}
+- (void)line:(CGContextRef)c from:(CGPoint)a to:(CGPoint)b color:(UIColor *)color width:(CGFloat)width {
+ CGContextSetStrokeColorWithColor(c,color.CGColor);CGContextSetLineWidth(c,width);
+ CGContextMoveToPoint(c,a.x,a.y);CGContextAddLineToPoint(c,b.x,b.y);CGContextStrokePath(c);
+}
+- (void)arrow:(CGContextRef)c at:(CGPoint)p toward:(CGPoint)tip color:(UIColor *)color size:(CGFloat)size {
+ CGFloat dx=tip.x-p.x,dy=tip.y-p.y,d=hypot(dx,dy);
+ if(d<.001)return;dx/=d;dy/=d;
+ CGPoint wing1=CGPointMake(tip.x-dx*size-dy*size*.4,tip.y-dy*size+dx*size*.4);
+ CGPoint wing2=CGPointMake(tip.x-dx*size+dy*size*.4,tip.y-dy*size-dx*size*.4);
+ CGContextSetFillColorWithColor(c,color.CGColor);CGContextMoveToPoint(c,tip.x,tip.y);
+ CGContextAddLineToPoint(c,wing1.x,wing1.y);CGContextAddLineToPoint(c,wing2.x,wing2.y);
+ CGContextClosePath(c);CGContextFillPath(c);
+}
+- (void)verticalDimension:(CGContextRef)c x:(CGFloat)x top:(CGFloat)top bottom:(CGFloat)bottom
+ text:(NSString *)value color:(UIColor *)color {
+ if(bottom-top<14)return;
+ [self line:c from:CGPointMake(x,top) to:CGPointMake(x,bottom) color:color width:1.3];
+ [self arrow:c at:CGPointMake(x,top+13) toward:CGPointMake(x,top) color:color size:8];
+ [self arrow:c at:CGPointMake(x,bottom-13) toward:CGPointMake(x,bottom) color:color size:8];
+ CGContextSaveGState(c);
+ CGContextTranslateCTM(c,x-10,(top+bottom)*.5+20);
+ CGContextRotateCTM(c,-M_PI_2);
+ [self label:value at:CGPointMake(0,0) size:13 color:color bold:YES];
+ CGContextRestoreGState(c);
+}
+- (void)horizontalDimension:(CGContextRef)c x1:(CGFloat)x1 x2:(CGFloat)x2 y:(CGFloat)y
+ text:(NSString *)value color:(UIColor *)color {
+ CGFloat lo=MIN(x1,x2),hi=MAX(x1,x2);
+ if(hi-lo<26)return;
+ [self line:c from:CGPointMake(lo,y) to:CGPointMake(hi,y) color:color width:1.1];
+ [self arrow:c at:CGPointMake(lo+12,y) toward:CGPointMake(lo,y) color:color size:7];
+ [self arrow:c at:CGPointMake(hi-12,y) toward:CGPointMake(hi,y) color:color size:7];
+ NSDictionary *font=@{NSFontAttributeName:[UIFont boldSystemFontOfSize:13]};
+ CGFloat tw=[value sizeWithAttributes:font].width;
+ [self label:value at:CGPointMake((lo+hi-tw)*.5,y-21) size:13 color:color bold:YES];
+}
 - (void)drawRect:(CGRect)rect {
- CGContextRef context=UIGraphicsGetCurrentContext();
- CGFloat w=rect.size.width,h=rect.size.height;
- CGContextSetFillColorWithColor(context,TBG().CGColor);CGContextFillRect(context,rect);
- NSDictionary *model=self.shape?:@{},*stock=[model[@"stock"] isKindOfClass:NSDictionary.class]?model[@"stock"]:@{};
+ CGContextRef c=UIGraphicsGetCurrentContext();
+ CGFloat w=CGRectGetWidth(rect),h=CGRectGetHeight(rect);
+ UIColor *bg=[self clr:.015 g:.055 b:.075],*grid=[self clr:.092 g:.17 b:.22],*gridMajor=[self clr:.16 g:.28 b:.34];
+ UIColor *white=[self clr:.88 g:.95 b:.97],*soft=[self clr:.55 g:.71 b:.76],*green=[self clr:.20 g:.91 b:.47];
+ UIColor *blue=[self clr:.18 g:.66 b:1],*red=[self clr:1 g:.25 b:.27],*cyan=[self clr:.15 g:.88 b:.90];
+ CGContextSetFillColorWithColor(c,bg.CGColor);CGContextFillRect(c,rect);
+ NSDictionary *model=[self.shape isKindOfClass:NSDictionary.class]?self.shape:@{};
+ NSDictionary *stock=[model[@"stock"] isKindOfClass:NSDictionary.class]?model[@"stock"]:@{};
  NSArray *profile=[model[@"profile"] isKindOfClass:NSArray.class]?model[@"profile"]:@[];
  double diameter=TNumber(stock[@"diameter"],0);
- double length=TNumber(stock[@"length"],0);
- if(length<=0)length=TNumber(model[@"finished_length"],0);
- NSDictionary *baseText=@{NSForegroundColorAttributeName:TWHITE(),NSFontAttributeName:[UIFont systemFontOfSize:15]};
- if(diameter<=0||length<=0||profile.count<2||w<200||h<160) {
-  [@"Zadaj polotovar a pridaj operáciu." drawAtPoint:CGPointMake(25,35) withAttributes:baseText];return;
+ double stockLen=TNumber(stock[@"length"],0),length=TNumber(model[@"finished_length"],0);
+ if(length<=0)length=stockLen;
+ BOOL hasProfile=diameter>0&&length>0&&profile.count>=2;
+ BOOL hasSidebar=w>660;
+ CGFloat sideW=hasSidebar?MAX(185,MIN(226,w*.24)):0;
+ CGFloat plotLeft=hasSidebar?58:52,plotRight=w-sideW-26;
+ CGFloat plotTop=47,plotBottom=h-89;
+ if(hasSidebar)plotRight-=12;
+ if(!hasProfile||plotRight-plotLeft<170||plotBottom-plotTop<130){
+  [self label:@"Zadaj polotovar a pridaj obrábaciu operáciu." at:CGPointMake(25,45) size:17 color:white bold:NO];
+  return;
  }
- // Lathe display convention: Z0 is the workpiece face on the RIGHT,
- // negative Z extends to the LEFT; X0 is on the axis, +diameter is DOWN.
- CGFloat left=76,right=w-30,axisY=77,bottom=h-54;
- CGFloat radius=(CGFloat)diameter*.5;
- // The diagram has a diameter ruler (X), not a radial ruler.
- // Use the SAME pixels-per-millimetre for Z LENGTH and displayed X DIAMETER.
- // The model profile is stored as a radius, therefore convert r to Ø = 2*r
- // before plotting. A Ø40 x Z40 stock must occupy a 40:40 square on screen.
- CGFloat scale=MIN((right-left)/(CGFloat)length,(bottom-axisY)/MAX((CGFloat)diameter,0.01));
- if(scale<.01)return;
- CGFloat z0=right,chuck=z0-(CGFloat)length*scale;
- CGFloat (^ZX)(double)=^CGFloat(double z){return z0-(CGFloat)z*scale;};
- CGFloat (^RY)(double)=^CGFloat(double r){return axisY+(CGFloat)(2.0*r)*scale;};
- UIColor *minor=[UIColor colorWithRed:.09 green:.19 blue:.23 alpha:1];
- UIColor *major=[UIColor colorWithRed:.17 green:.31 blue:.36 alpha:1];
- UIColor *green=[UIColor colorWithRed:.24 green:.95 blue:.48 alpha:1];
- UIColor *red=[UIColor colorWithRed:.96 green:.24 blue:.28 alpha:1];
- // Draw 10 mm Z grid anchored at Z0, with rulers in the plot's top margin.
- NSInteger zStep=length>220?50:(length>100?20:10);
- for(NSInteger i=0;i<=MIN(120,(NSInteger)floor(length/zStep));i++){
-  double z=i*zStep;CGFloat x=ZX(z);
-  CGContextSetLineWidth(context,i==0?1.8:1);
-  CGContextSetStrokeColorWithColor(context,i==0?green.CGColor:major.CGColor);
-  CGContextMoveToPoint(context,x,axisY);CGContextAddLineToPoint(context,x,bottom+4);CGContextStrokePath(context);
-  CGContextSetStrokeColorWithColor(context,minor.CGColor);
-  CGContextMoveToPoint(context,x,29);CGContextAddLineToPoint(context,x,40);CGContextStrokePath(context);
-  NSString *tick=i==0?@"0":[NSString stringWithFormat:@"−%ld",(long)i*zStep];
-  CGFloat ox=i==0?-6:-14;
-  [tick drawAtPoint:CGPointMake(x+ox,9) withAttributes:
-   @{NSFontAttributeName:[UIFont boldSystemFontOfSize:13],NSForegroundColorAttributeName:(i==0?green:TWHITE())}];
+ // Equal pixels/mm on both axes. The sampled profile is in RADII; plot one
+ // radius above and its mirror below the centerline for the FULL diameter.
+ CGFloat maxD=diameter;
+ CGFloat scale=MIN((plotRight-plotLeft)/MAX((CGFloat)length,1),(plotBottom-plotTop)/MAX(maxD,1));
+ if(scale<.02)return;
+ CGFloat cx=plotRight,cy=(plotTop+plotBottom)*.5;
+ CGFloat chuck=cx-(CGFloat)length*scale;
+ CGFloat (^zx)(double)=^CGFloat(double z){return cx-(CGFloat)z*scale;};
+ CGFloat (^yr)(double)=^CGFloat(double r){return cy-(CGFloat)r*scale;};
+ CGFloat (^yb)(double r){return cy+(CGFloat)r*scale;};
+ // Grid and quantitative rulers are anchored at the WORK FACE Z0 and X0.
+ CGContextSaveGState(c);CGContextClipToRect(c,CGRectMake(plotLeft,plotTop,plotRight-plotLeft,plotBottom-plotTop));
+ NSInteger minorZ=length>220?20:(length>90?10:5);
+ NSInteger majorZ=minorZ*2;
+ for(NSInteger iz=0;iz<=(NSInteger)ceil(length/minorZ);iz++){
+  CGFloat x=zx((double)iz*minorZ);
+  if(x<plotLeft||x>plotRight)continue;
+  [self line:c from:CGPointMake(x,plotTop) to:CGPointMake(x,plotBottom)
+      color:iz%2?grid:gridMajor width:iz%2?.6:.85];
  }
- // X is displayed as positive DIAMETER below the centerline, not radial depth.
- NSInteger diaStep=diameter>160?40:(diameter>70?20:10);
- for(NSInteger i=0;i<=MIN(100,(NSInteger)floor(diameter/diaStep));i++){
-  double d=i*diaStep;CGFloat y=RY(d*.5);
-  CGContextSetStrokeColorWithColor(context,major.CGColor);
-  CGContextSetLineWidth(context,1);
-  CGContextMoveToPoint(context,left-1,y);CGContextAddLineToPoint(context,right+4,y);CGContextStrokePath(context);
-  [[NSString stringWithFormat:@"Ø%ld",(long)i*diaStep] drawAtPoint:CGPointMake(6,y-9)
-   withAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:13],
-    NSForegroundColorAttributeName:i==0?TCYAN():TWHITE()}];
+ double dgrid=diameter>160?20:(diameter>65?10:5);
+ NSInteger yLines=(NSInteger)ceil((diameter/2)/dgrid);
+ for(NSInteger i=-yLines;i<=yLines;i++){
+  CGFloat y=cy+i*dgrid*scale;
+  if(y<plotTop||y>plotBottom)continue;
+  [self line:c from:CGPointMake(plotLeft,y) to:CGPointMake(plotRight,y)
+      color:i%2?grid:gridMajor width:i%2?.65:.85];
  }
- [@"Z (mm) → 0" drawAtPoint:CGPointMake(MAX(left,chuck),1)
-  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:13],NSForegroundColorAttributeName:TCYAN()}];
- [@"X = Ø (+)" drawAtPoint:CGPointMake(5,axisY+19)
-  withAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:12],NSForegroundColorAttributeName:TCYAN()}];
- // Centerline X0 is explicitly dashed across the workpiece.
- CGFloat dash[]={7,6};CGContextSetLineDash(context,0,dash,2);
- CGContextSetStrokeColorWithColor(context,[UIColor colorWithRed:.63 green:.81 blue:.83 alpha:1].CGColor);
- CGContextSetLineWidth(context,1.8);
- CGContextMoveToPoint(context,left,axisY);CGContextAddLineToPoint(context,right+7,axisY);
- CGContextStrokePath(context);CGContextSetLineDash(context,0,NULL,0);
- [@"X0 / OS OBROBKU" drawAtPoint:CGPointMake(MAX(left,chuck)+12,axisY-22)
-  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:13],NSForegroundColorAttributeName:TCYAN()}];
- // Material is drawn on ONE side of the axis only; no mirrored second half.
- CGContextSetFillColorWithColor(context,[UIColor colorWithRed:.29 green:.46 blue:.50 alpha:.16].CGColor);
- CGContextFillRect(context,CGRectMake(chuck,axisY,right-chuck,diameter*scale));
- UIBezierPath *body=[UIBezierPath bezierPath],*edge=[UIBezierPath bezierPath];
- BOOL began=NO;CGFloat firstX=0,lastX=0;
- for(id value in profile){
-  if(![value isKindOfClass:NSArray.class]||[value count]<2)continue;
-  double z=TNumber(value[0],0),r=TNumber(value[1],0);
-  CGFloat x=ZX(z),y=RY(r);
-  if(!began){[body moveToPoint:CGPointMake(x,axisY)];[body addLineToPoint:CGPointMake(x,y)];[edge moveToPoint:CGPointMake(x,y)];began=YES;firstX=x;}
-  else {[body addLineToPoint:CGPointMake(x,y)];[edge addLineToPoint:CGPointMake(x,y)];}
-  lastX=x;
+ CGContextRestoreGState(c);
+ [self label:@"Z (mm)" at:CGPointMake(plotLeft,5) size:13 color:soft bold:YES];
+ for(NSInteger iz=0;iz<=MIN(140,(NSInteger)ceil(length/majorZ));iz++){
+  double z=(double)iz*majorZ;CGFloat x=zx(z);
+  if(x<plotLeft+12||x>plotRight+2)continue;
+  NSString *val=z<.001?@"0":[NSString stringWithFormat:@"−%.0f",z];
+  [self label:val at:CGPointMake(x-12,24) size:11 color:soft bold:NO];
+  [self line:c from:CGPointMake(x,41) to:CGPointMake(x,46) color:gridMajor width:1];
  }
- if(began){
-  [body addLineToPoint:CGPointMake(lastX,axisY)];[body closePath];
-  [[UIColor colorWithRed:.59 green:.66 blue:.69 alpha:.85] setFill];[body fill];
-  [[UIColor colorWithWhite:.93 alpha:.8] setStroke];body.lineWidth=1;[body stroke];
-  UIColor *outline=self.verified?green:TCYAN();[outline setStroke];edge.lineWidth=3;[edge stroke];
+ [self label:@"Ø X (mm)" at:CGPointMake(3,plotTop-22) size:11 color:soft bold:NO];
+ for(NSInteger i=0;i<=MIN(15,(NSInteger)floor((diameter*.5)/dgrid));i++){
+  CGFloat y=cy+i*dgrid*scale;
+  if(y>plotBottom)continue;
+  [self label:[NSString stringWithFormat:@"%.0f",i*dgrid*2] at:CGPointMake(7,y-7) size:11 color:soft bold:NO];
  }
- // Workpiece face / origin Z0 (green).
- CGContextSetStrokeColorWithColor(context,green.CGColor);CGContextSetLineWidth(context,2.8);
- CGContextMoveToPoint(context,z0,39);CGContextAddLineToPoint(context,z0,bottom+6);CGContextStrokePath(context);
- [@"Z0" drawAtPoint:CGPointMake(z0-23,41)
-  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:16],NSForegroundColorAttributeName:green}];
- // Red chuck/stock boundary at -stock.length; visual reference, NOT a verified collision boundary.
- CGContextSetFillColorWithColor(context,[UIColor colorWithRed:.72 green:.10 blue:.13 alpha:.16].CGColor);
- CGContextFillRect(context,CGRectMake(MAX(0,chuck-22),axisY,MIN(22,chuck),MAX(1,bottom-axisY)));
- CGContextSetStrokeColorWithColor(context,red.CGColor);CGContextSetLineWidth(context,3);
- CGContextMoveToPoint(context,chuck,39);CGContextAddLineToPoint(context,chuck,bottom+6);CGContextStrokePath(context);
- [[NSString stringWithFormat:@"Z−%.0f",length] drawAtPoint:CGPointMake(MAX(2,chuck-21),43)
-  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:15],NSForegroundColorAttributeName:red}];
- [@"HRANICA UPÍNANIA • ORIENTAČNÁ" drawAtPoint:CGPointMake(MAX(3,chuck-15),bottom+8)
-  withAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:11],NSForegroundColorAttributeName:red}];
- for(id item in model[@"partoffs"]?:@[]){
-  if(![item isKindOfClass:NSDictionary.class])continue;
-  double z=TNumber(item[@"z"],-1);if(z<0||z>length)continue;
-  CGContextSetStrokeColorWithColor(context,[UIColor orangeColor].CGColor);CGContextSetLineWidth(context,1.5);
-  CGContextMoveToPoint(context,ZX(z),axisY+2);CGContextAddLineToPoint(context,ZX(z),RY(radius));CGContextStrokePath(context);
+ // Reference boundary at the left end of the defined model. Actual chuck
+ // location has not been measured, so never present this as safe clearance.
+ CGContextSetFillColorWithColor(c,[red colorWithAlphaComponent:.10].CGColor);
+ CGContextFillRect(c,CGRectMake(chuck-14,plotTop,14,plotBottom-plotTop));
+ [self line:c from:CGPointMake(chuck,plotTop-1) to:CGPointMake(chuck,plotBottom+1) color:red width:2.3];
+ [self label:@"UPNUTIE • REFERENCIA" at:CGPointMake(MAX(plotLeft,chuck-12),plotTop+7) size:11 color:red bold:YES];
+ // Real closed OD profile: top contour from rearmost Z to Z0, mirrored to bottom.
+ UIBezierPath *outer=[UIBezierPath bezierPath],*upper=[UIBezierPath bezierPath],*lower=[UIBezierPath bezierPath];
+ BOOL first=YES;
+ for(id item in profile){
+  if(![item isKindOfClass:NSArray.class]||[item count]<2)continue;
+  double z=TNumber(item[0],0),r=MAX(0,TNumber(item[1],0));
+  CGPoint point=CGPointMake(zx(z),yr(r));
+  if(first){[outer moveToPoint:point];[upper moveToPoint:point];first=NO;}
+  else {[outer addLineToPoint:point];[upper addLineToPoint:point];}
  }
- NSString *note=self.verified?@"SERVER: GEOMETRIA OVERENÁ • nie kolízie":@"LOKÁLNY NÁHĽAD – NEOVERENÉ";
- [note drawAtPoint:CGPointMake(10,h-20) withAttributes:
-  @{NSForegroundColorAttributeName:TCYAN(),NSFontAttributeName:[UIFont boldSystemFontOfSize:14]}];
+ if(first)return;
+ for(id item in [profile reverseObjectEnumerator]){
+  if(![item isKindOfClass:NSArray.class]||[item count]<2)continue;
+  double z=TNumber(item[0],0),r=MAX(0,TNumber(item[1],0));
+  [outer addLineToPoint:CGPointMake(zx(z),yb(r))];
+ }
+ [outer closePath];
+ for(id item in profile){
+  if(![item isKindOfClass:NSArray.class]||[item count]<2)continue;
+  CGPoint pt=CGPointMake(zx(TNumber(item[0],0)),yb(MAX(0,TNumber(item[1],0))));
+  if(!lower.currentPoint.x&&!lower.currentPoint.y)[lower moveToPoint:pt];else [lower addLineToPoint:pt];
+ }
+ UIColor *metal=[self clr:.62 g:.71 b:.76];
+ [[metal colorWithAlphaComponent:.92] setFill];[outer fill];
+ // Light metallic highlights - clipped to the true shape, not a stock rectangle.
+ CGContextSaveGState(c);[outer addClip];
+ CGFloat band=MAX(1,diameter*scale*.10);
+ CGContextSetFillColorWithColor(c,[[UIColor whiteColor] colorWithAlphaComponent:.18].CGColor);
+ CGContextFillRect(c,CGRectMake(chuck,cy-diameter*scale*.28,plotRight-chuck,band));
+ CGContextSetFillColorWithColor(c,[[UIColor blackColor] colorWithAlphaComponent:.16].CGColor);
+ CGContextFillRect(c,CGRectMake(chuck,cy+diameter*scale*.25,plotRight-chuck,band));
+ CGContextRestoreGState(c);
+ [white setStroke];upper.lineWidth=1.9;[upper stroke];lower.lineWidth=1.9;[lower stroke];
+ // Optional typed internal geometry. V34 itself currently supplies none.
+ // Do not fabricate a bore when the source model has only an outer profile.
+ NSArray *bores=[model[@"bores"] isKindOfClass:NSArray.class]?model[@"bores"]:@[];
+ NSMutableArray *validBores=[NSMutableArray array];
+ for(id raw in bores){
+  if(![raw isKindOfClass:NSDictionary.class])continue;
+  double d=TNumber(raw[@"diameter"],0),z1=TNumber(raw[@"zStart"],-1),z2=TNumber(raw[@"zEnd"],-1);
+  if(d<=0||d>=diameter||z1<0||z2<=z1||z2>length)continue;
+  [validBores addObject:@{@"diameter":@(d),@"zStart":@(z1),@"zEnd":@(z2)}];
+ }
+ for(NSDictionary *bore in validBores){
+  double d=[bore[@"diameter"] doubleValue],z1=[bore[@"zStart"] doubleValue],z2=[bore[@"zEnd"] doubleValue];
+  CGRect opening=CGRectMake(zx(z2),cy-(CGFloat)d*.5*scale,zx(z1)-zx(z2),(CGFloat)d*scale);
+  CGContextSetFillColorWithColor(c,[self clr:.095 g:.17 b:.22].CGColor);CGContextFillRect(c,opening);
+  CGContextSetStrokeColorWithColor(c,blue.CGColor);CGContextSetLineWidth(c,1.4);CGContextStrokeRect(c,opening);
+  [self verticalDimension:c x:CGRectGetMidX(opening) top:CGRectGetMinY(opening) bottom:CGRectGetMaxY(opening)
+                    text:[NSString stringWithFormat:@"Ø%.1f",d] color:blue];
+  CGFloat yy=MIN(plotBottom+22,h-59);
+  [self horizontalDimension:c x1:zx(z1) x2:zx(z2) y:yy
+      text:[NSString stringWithFormat:@"%.1f DĹŽKA DIERY",z2-z1] color:blue];
+ }
+ // Dashed X0 reference is drawn ON TOP of the component.
+ CGContextSaveGState(c);CGFloat dash[]={6,5};CGContextSetLineDash(c,0,dash,2);
+ [self line:c from:CGPointMake(plotLeft,cy) to:CGPointMake(plotRight,cy) color:cyan width:1.2];
+ CGContextRestoreGState(c);
+ [self label:@"X0" at:CGPointMake(plotLeft+4,cy+4) size:13 color:cyan bold:YES];
+ // Green Z0 face and red rear reference.
+ [self line:c from:CGPointMake(cx,plotTop-3) to:CGPointMake(cx,plotBottom+2) color:green width:2.5];
+ [self label:@"Z0" at:CGPointMake(cx-21,plotTop+5) size:13 color:green bold:YES];
+ [self label:[NSString stringWithFormat:@"Z−%.0f",length] at:CGPointMake(MAX(plotLeft,chuck-16),plotBottom+5) size:11 color:red bold:YES];
+ // Outside diameter dimensions. Position where the operation ACTUALLY acts.
+ NSMutableArray *outerDims=[NSMutableArray array];
+ double sampleZ=MIN(length*.56,length-.001);
+ for(NSInteger i=0;i<profile.count;i++){
+  NSArray *q=profile[i];if(![q isKindOfClass:NSArray.class]||q.count<2)continue;
+  if(TNumber(q[0],0)<=sampleZ){double d=2*TNumber(q[1],0);if(d>0)[outerDims addObject:@{@"z":@(sampleZ),@"d":@(d)}];break;}
+ }
+ for(NSDictionary *op in self.operations?:@[]){
+  NSString *kind=TString(op[@"type"]);
+  if([kind isEqualToString:@"diameter"] || [kind isEqualToString:@"groove"]){
+   double z=TNumber(op[@"zStart"],0),zend=[kind isEqualToString:@"groove"]?z+TNumber(op[@"width"],0):TNumber(op[@"zEnd"],z);
+   if(zend<=z||z>length)continue;
+   [outerDims addObject:@{@"z":@(MIN(length,(z+zend)*.5)),@"d":@([op[@"diameter"] doubleValue])}];
+  }else if([kind isEqualToString:@"taper"]){
+   double za=TNumber(op[@"zStart"],0),zb=TNumber(op[@"zEnd"],0);
+   if(zb<=za||za>length)continue;
+   [outerDims addObject:@{@"z":@(MIN(length,MAX(0,za))),@"d":@([op[@"diameterStart"] doubleValue])}];
+   [outerDims addObject:@{@"z":@(MIN(length,MAX(0,zb))),@"d":@([op[@"diameterEnd"] doubleValue])}];
+  }
+ }
+ // Up to six non-duplicated OD dimensions to retain legibility on old iPads.
+ NSMutableArray *placed=[NSMutableArray array];
+ for(NSDictionary *dim in outerDims){
+  if(placed.count>=6)break;
+  double z=TNumber(dim[@"z"],0),d=TNumber(dim[@"d"],0);
+  if(d<=0||d>diameter+.01||z<0||z>length)continue;
+  CGFloat x=zx(z);BOOL overlap=NO;
+  for(NSNumber *v in placed)if(fabs(v.doubleValue-x)<43)overlap=YES;
+  if(overlap)continue;
+  [placed addObject:@(x)];
+  [self verticalDimension:c x:x top:cy-d*.5*scale bottom:cy+d*.5*scale
+      text:[NSString stringWithFormat:@"Ø%.1f",d] color:green];
+ }
+ // External Z lengths measured relative to the same finished face.
+ NSInteger count=0;
+ for(NSDictionary *op in self.operations?:@[]){
+  NSString *kind=TString(op[@"type"]);
+  if(![@[@"diameter",@"taper",@"groove"] containsObject:kind])continue;
+  double za=TNumber(op[@"zStart"],0);
+  double zb=[kind isEqualToString:@"groove"]?za+TNumber(op[@"width"],0):TNumber(op[@"zEnd"],0);
+  if(!(za>=0&&zb>za&&zb<=length))continue;
+  CGFloat yy=plotBottom+23+(count%2)*20;
+  [self horizontalDimension:c x1:zx(za) x2:zx(zb) y:yy
+      text:[NSString stringWithFormat:@"%.1f",zb-za] color:green];
+  count++;if(count>=4)break;
+ }
+ [self horizontalDimension:c x1:chuck x2:cx y:h-22
+   text:[NSString stringWithFormat:@"L %.1f",length] color:green];
+ // Radius leader: arrow lands at a point half-way along the actual curved
+ // sample interval, never on the sharp edge or at the radius center.
+ NSInteger radIndex=0;
+ for(NSDictionary *op in self.operations?:@[]){
+  if(![TString(op[@"type"]) isEqualToString:@"radius"])continue;
+  double z=TNumber(op[@"z"],-1),rad=TNumber(op[@"size"],0);
+  if(z<0||rad<=0||z>length)continue;
+  double mid=MIN(length-.001,MAX(.001,z+rad*.5));
+  double bestDiff=DBL_MAX,bestR=0;
+  for(id row in profile){
+   if(![row isKindOfClass:NSArray.class]||[row count]<2)continue;
+   double diff=fabs(TNumber(row[0],0)-mid);
+   if(diff<bestDiff){bestDiff=diff;bestR=TNumber(row[1],0);}
+  }
+  if(bestDiff>MAX(1.,rad*.8))continue;
+  CGPoint tip=CGPointMake(zx(mid),yr(bestR));
+  CGPoint leader=CGPointMake(tip.x+19,tip.y-23);
+  [self line:c from:CGPointMake(leader.x+9,leader.y-1) to:tip color:green width:1.3];
+  [self arrow:c at:leader toward:tip color:green size:8];
+  [self label:[NSString stringWithFormat:@"R%.1f",rad] at:CGPointMake(leader.x+11,leader.y-18) size:13 color:green bold:YES];
+  radIndex++;if(radIndex>=3)break;
+ }
+ if(hasSidebar){
+  CGFloat sx=w-sideW-8,sw=sideW-8;
+  CGContextSetFillColorWithColor(c,[self clr:.038 g:.100 b:.135].CGColor);
+  CGContextFillRect(c,CGRectMake(sx,0,w-sx,h));
+  [self label:@"GEOMETRIA" at:CGPointMake(sx+10,12) size:14 color:cyan bold:YES];
+  [self line:c from:CGPointMake(sx+8,35) to:CGPointMake(w-10,35) color:gridMajor width:1];
+  NSArray *facts=@[
+    [NSString stringWithFormat:@"Dĺžka    %.1f mm",length],
+    [NSString stringWithFormat:@"Polotovar Ø%.1f",diameter],
+    [NSString stringWithFormat:@"Vonkajší profil: ÁNO"],
+    [NSString stringWithFormat:@"Vnútorné otvory: %lu",(unsigned long)validBores.count],
+    [NSString stringWithFormat:@"Rozsah Z: −%.1f až 0",length]
+  ];
+  CGFloat fy=51;
+  for(NSString *fact in facts){[self label:fact at:CGPointMake(sx+9,fy) size:12 color:white bold:NO];fy+=27;}
+  [self line:c from:CGPointMake(sx+8,fy+4) to:CGPointMake(w-10,fy+4) color:gridMajor width:1];fy+=17;
+  [self label:@"KÓTOVANIE" at:CGPointMake(sx+10,fy) size:14 color:cyan bold:YES];fy+=26;
+  NSArray *keys=@[@"Vonkajší Ø / Z",@"Vnútorný Ø / Z",@"Stredová os X0",@"Čelo Z0",@"Referenčný okraj"];
+  NSArray *colors=@[green,blue,cyan,green,red];
+  for(NSInteger i=0;i<keys.count;i++){
+   UIColor *keyColor=colors[i];
+   [self line:c from:CGPointMake(sx+9,fy+7) to:CGPointMake(sx+33,fy+7) color:keyColor width:2];
+   [self label:keys[i] at:CGPointMake(sx+39,fy) size:11 color:white bold:NO];fy+=25;
+  }
+  [self line:c from:CGPointMake(sx+8,fy+3) to:CGPointMake(w-10,fy+3) color:gridMajor width:1];fy+=13;
+  [self label:@"MIERKA 1 : 1" at:CGPointMake(sx+9,fy) size:13 color:green bold:YES];fy+=26;
+  [self label:@"Geometria ≠ kontrola" at:CGPointMake(sx+9,fy) size:11 color:soft bold:NO];fy+=17;
+  [self label:@"kolízií a upnutia." at:CGPointMake(sx+9,fy) size:11 color:soft bold:NO];
+ }
 }
 
 @end
@@ -187,7 +357,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (void)viewDidLoad {
  [super viewDidLoad];self.view.backgroundColor=TBG();
  UIButton *back=[self button:@"‹ SPÄŤ" action:@selector(close)];back.tag=900;[self.view addSubview:back];
- UILabel *heading=[self label:@"AlphaLink CAM iPad V1.8.1 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
+ UILabel *heading=[self label:@"AlphaLink CAM iPad V1.9 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
  self.status=[self label:@"NOVÝ NÁVRH • geometria bude overená Raspberry Pi"];self.status.tag=902;self.status.textAlignment=NSTextAlignmentRight;self.status.adjustsFontSizeToFitWidth=YES;self.status.minimumScaleFactor=.72;self.status.font=[UIFont systemFontOfSize:14];[self.view addSubview:self.status];
  self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"ZADANIE",@"OPERÁCIE",@"2D NÁHĽAD",@"G-KÓD",@"NÁVRHY"]];self.tabs.selectedSegmentIndex=0;
  [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
@@ -206,9 +376,9 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  self.operationTable=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];self.operationTable.backgroundColor=TBG();self.operationTable.separatorColor=TPANEL();self.operationTable.rowHeight=68;self.operationTable.delegate=self;self.operationTable.dataSource=self;[self.operationPage addSubview:self.operationTable];
  NSArray *opText=@[@"UPRAVIŤ",@"POSUNÚŤ ↑",@"POSUNÚŤ ↓",@"ODSTRÁNIŤ"];NSArray *opSEL=@[@"editSelected",@"moveUp",@"moveDown",@"removeSelected"];
  for(NSInteger i=0;i<4;i++){UIButton *b=[self button:opText[i] action:NSSelectorFromString(opSEL[i])];b.tag=920+i;[self.operationPage addSubview:b];}
- self.preview=[CNCProfileView new];self.preview.layer.cornerRadius=9;self.preview.layer.masksToBounds=YES;[self.previewPage addSubview:self.preview];
+ self.preview=[CNCProfileView new];self.preview.contentMode=UIViewContentModeRedraw;self.preview.layer.cornerRadius=9;self.preview.layer.masksToBounds=YES;[self.previewPage addSubview:self.preview];
  UIButton *refresh=[self button:@"PREPOČÍTAŤ NA RASPBERRY PI" action:@selector(requestPreview)];refresh.tag=931;[self.previewPage addSubview:refresh];
- UILabel *previewHelp=[self label:@"Zelený profil = model overený serverom. Náhľad nie je kontrola kolízií ani simulácia obrábania."];previewHelp.tag=932;[self.previewPage addSubview:previewHelp];
+ UILabel *previewHelp=[self label:@"Celý profil • mierka Z/X 1:1 • zelené vonkajšie a modré vnútorné kóty iba podľa geometrie. Náhľad nezaručuje bezpečnosť obrábania."];previewHelp.tag=932;[self.previewPage addSubview:previewHelp];
  UILabel *codeInfo=[self label:@"CAM program .600 generuje AlphaLink na Raspberry Pi. Neskúšaj ho bez kontroly na stroji."];codeInfo.tag=941;[self.codePage addSubview:codeInfo];
  self.codeName=[self field:@"O0001" numeric:NO];[self.codePage addSubview:self.codeName];
  self.gcode=[[UITextView alloc] initWithFrame:CGRectZero];self.gcode.backgroundColor=TPANEL();self.gcode.textColor=TWHITE();self.gcode.font=[UIFont fontWithName:@"Menlo" size:18]?:[UIFont systemFontOfSize:18];self.gcode.layer.cornerRadius=8;[self.codePage addSubview:self.gcode];
@@ -450,6 +620,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  return @{@"stock":@{@"diameter":@(dia),@"length":@(l0)},@"finished_length":@(len),@"profile":out,@"partoffs":parts};
 }
 - (void)localPreview {
+ self.preview.operations=[self.operations copy];
  if(self.verifiedModel){self.preview.shape=self.verifiedModel;self.preview.verified=YES;}
  else {self.preview.shape=[self localModel:[self projectWith:self.operations]];self.preview.verified=NO;}
  [self.preview setNeedsDisplay];
