@@ -59,7 +59,7 @@
  [super viewDidLoad];
  self.view.backgroundColor=self.bg;self.files=[NSMutableArray array];self.projects=[NSMutableArray array];self.isoFiles=[NSMutableArray array];
  self.machineMode=0;self.pageIndex=2;self.transferBusy=NO;
- self.headerTitle=[self dashboardLabel:@"ALPHALINK CAM V1.7" size:22 color:UIColor.whiteColor];
+ self.headerTitle=[self dashboardLabel:@"ALPHALINK CAM V1.8" size:22 color:UIColor.whiteColor];
  self.headerTitle.font=[UIFont boldSystemFontOfSize:22];[self.view addSubview:self.headerTitle];
  self.piLight=[self dashboardLabel:@"● PI ODPOJENÉ" size:14 color:[UIColor colorWithRed:1 green:.58 blue:.30 alpha:1]];
  self.piLight.textAlignment=NSTextAlignmentCenter;[self.view addSubview:self.piLight];
@@ -67,7 +67,7 @@
  self.machineLight.textAlignment=NSTextAlignmentRight;[self.view addSubview:self.machineLight];
  self.status=[self dashboardLabel:@"Pripravené • pripoj Raspberry Pi" size:13 color:[UIColor colorWithWhite:.80 alpha:1]];
  self.status.textAlignment=NSTextAlignmentCenter;[self.view addSubview:self.status];
- NSArray *titles=@[@"01 EDITÁCIA",@"02 G-KÓD + PRÍKAZY",@"03 PRENOS / KNIŽNICA",@"04 NASTAVENIA"];
+ NSArray *titles=@[@"01 EDITÁCIA",@"02 G-KÓD .600",@"03 PRENOS / KNIŽNICA",@"04 NASTAVENIA"];
  NSMutableArray *nav=[NSMutableArray array];
  for(NSInteger i=0;i<titles.count;i++){UIButton *b=[self dashboardButton:titles[i] action:@selector(navigate:) tint:nil];
  b.tag=810+i;[self.view addSubview:b];[nav addObject:b];}self.navButtons=nav;
@@ -79,12 +79,11 @@
  self.transferPanel=[UIView new];[self decoratePanel:self.transferPanel];[self.programPage addSubview:self.transferPanel];
  self.libraryTitle=[self dashboardLabel:@"▣  KNIŽNICA RASPBERRY PI" size:19 color:self.cyan];
  self.libraryTitle.font=[UIFont boldSystemFontOfSize:19];[self.libraryPanel addSubview:self.libraryTitle];
- self.libraryHint=[self dashboardLabel:@"Výber .600 pre prenos do Alpha 400 • Návrhy .hbj a ISO .nc sa neposielajú v režime CAM." size:12 color:[UIColor colorWithWhite:.74 alpha:1]];
- [self.libraryPanel addSubview:self.libraryHint];
+ // Redundant explanatory label removed to give the library more space.
  self.uploadButton=[self dashboardButton:@"⇧  NAHRAŤ .600 DO PI" action:@selector(uploadToPi) tint:self.cyan];[self.libraryPanel addSubview:self.uploadButton];
  self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
  self.table.backgroundColor=[UIColor colorWithRed:.015 green:.067 blue:.089 alpha:1];self.table.dataSource=self;self.table.delegate=self;
- self.table.rowHeight=43;self.table.sectionHeaderHeight=28;
+ self.table.rowHeight=39;self.table.sectionHeaderHeight=0;
  self.table.separatorColor=[UIColor colorWithRed:.09 green:.28 blue:.33 alpha:1];
  [self.libraryPanel addSubview:self.table];
  self.queueStatus=[self dashboardLabel:@"FRONTA NA ODOSLANIE • prázdna" size:15 color:self.cyan];
@@ -94,7 +93,7 @@
  self.selectedStatus=[self dashboardLabel:@"Vybraný program: žiadny" size:15 color:UIColor.whiteColor];[self.libraryPanel addSubview:self.selectedStatus];
  self.progressBar=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
  self.progressBar.progressTintColor=[UIColor colorWithRed:.04 green:.93 blue:.40 alpha:1];
- self.progressBar.trackTintColor=[UIColor colorWithRed:.11 green:.26 blue:.31 alpha:1];
+ self.progressBar.trackTintColor=[UIColor colorWithWhite:.34 alpha:1];
  self.progressBar.progress=0;[self.libraryPanel addSubview:self.progressBar];
  self.progressStatus=[self dashboardLabel:@"0 / 0 B • 0 % • neprebieha prenos" size:13 color:self.cyan];
  self.progressStatus.textAlignment=NSTextAlignmentCenter;[self.libraryPanel addSubview:self.progressStatus];
@@ -171,11 +170,10 @@
  self.libraryPanel.frame=CGRectMake(0,0,leftW,ph);
  self.transferPanel.frame=CGRectMake(leftW+inter,0,rightW,ph);
  CGFloat m=10,innerW=leftW-2*m;
- self.libraryTitle.frame=CGRectMake(m,7,innerW*.60,26);
- self.uploadButton.frame=CGRectMake(leftW-179,6,169,31);
- self.libraryHint.frame=CGRectMake(m,39,innerW,40);
- CGFloat tableY=84,actionsRowH=38,actionsGap=6;
- CGFloat tableH=MAX(130,ph-298);
+ self.libraryTitle.frame=CGRectMake(m,7,innerW-240,26);
+ self.uploadButton.frame=CGRectMake(leftW-232,6,222,33);
+ CGFloat tableY=46,actionsRowH=38,actionsGap=6;
+ CGFloat tableH=MAX(130,ph-260);
  self.table.frame=CGRectMake(m,tableY,innerW,tableH);
  CGFloat queueY=tableY+tableH+5;
  self.queueStatus.frame=CGRectMake(m,queueY,innerW-115,33);
@@ -209,17 +207,25 @@
 }
 - (void)navigate:(UIButton *)sender {
  NSInteger tab=sender.tag-810;
- if(tab==0){self.pageIndex=0;self.tabs.selectedSegmentIndex=1;[self updateTabs];}
- else if(tab==1){
+ if(tab==0){
   if(self.machineMode!=2 || ![self.connectedBase isEqualToString:[self base]]) {
-   [self alert:@"Editor operácií vyžaduje pripojený AlphaLink V34."];return;
+   [self alert:@"Editor obrábacích operácií vyžaduje pripojený AlphaLink V34. Najprv pripoj Raspberry Pi."];
+   return;
   }
-  CNCTurningController *editor=[[CNCTurningController alloc] initWithBaseURL:[self base]];
-  editor.modalPresentationStyle=UIModalPresentationFullScreen;
-  [self presentViewController:editor animated:YES completion:nil];
+  // The real geometry/operations/G-code/projects editor belongs in "01 EDITÁCIA".
+  self.pageIndex=0;[self layoutContent];
+  CNCTurningController *turning=[[CNCTurningController alloc] initWithBaseURL:[self base]];
+  turning.modalPresentationStyle=UIModalPresentationFullScreen;
+  [self presentViewController:turning animated:YES completion:^{
+   self.pageIndex=2;[self layoutContent];
+  }];
   return;
- } else if(tab==2){[self showPrograms];}
- else {[self showSettings];}
+ }
+ if(tab==1){
+  // Keep a lightweight raw .600 text editor for programs opened from the library.
+  self.tabs.selectedSegmentIndex=1;[self updateTabs];
+ } else if(tab==2)[self showPrograms];
+ else [self showSettings];
  [self layoutContent];
 }
 - (void)showPrograms {
@@ -233,7 +239,7 @@
   self.tabs.selectedSegmentIndex=0;[self showPrograms];return;
  }
  BOOL edit=self.tabs.selectedSegmentIndex==1;
- self.pageIndex=edit?0:2;
+ self.pageIndex=edit?1:2;
  self.programPage.hidden=edit;self.editor.hidden=!edit;self.settingsPage.hidden=YES;
  [self layoutContent];
 }
@@ -340,63 +346,37 @@
   [self.table reloadData];
   self.status.text=[NSString stringWithFormat:@"ALPHALINK • %lu programov na Raspberry Pi",(unsigned long)clean.count];
  }];
- if(mode==2){
-  [self request:@"GET" path:@"/api/turning/projects" body:nil done:^(NSDictionary *j,NSError *e){
-   if(!e && [j[@"projects"] isKindOfClass:NSArray.class])self.projects=[j[@"projects"] mutableCopy];
-   else [self.projects removeAllObjects];
-   [self.table reloadData];
-  }];
-  [self request:@"GET" path:@"/api/review/list" body:nil done:^(NSDictionary *j,NSError *e){
-   if(!e && [j[@"files"] isKindOfClass:NSArray.class])self.isoFiles=[j[@"files"] mutableCopy];
-   else [self.isoFiles removeAllObjects];
-   [self.table reloadData];
-  }];
-  [self fetchTransferStatus];
- }
+ if(mode==2)[self fetchTransferStatus];
 }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {return self.machineMode==2?3:1;}
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
- if(section==1)return self.projects.count;
- if(section==2)return self.isoFiles.count;
- return self.files.count;
-}
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
- if(section==1)return [NSString stringWithFormat:@"ULOŽENÉ NÁVRHY .HBJ (%lu) • NEODOSIELAJÚ SA",(unsigned long)self.projects.count];
- if(section==2)return [NSString stringWithFormat:@"ISO G-KÓDY .NC (%lu) • REŽIM READ",(unsigned long)self.isoFiles.count];
- return [NSString stringWithFormat:@"STROJOVÉ PROGRAMY .600 (%lu)",(unsigned long)self.files.count];
-}
-- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
- UIView *v=[UIView new];v.backgroundColor=[UIColor colorWithRed:.07 green:.19 blue:.24 alpha:1];
- UILabel *lab=[self dashboardLabel:[self tableView:tableView titleForHeaderInSection:section] size:13 color:self.cyan];
- lab.font=[UIFont boldSystemFontOfSize:13];lab.frame=CGRectMake(9,2,tableView.bounds.size.width-18,23);[v addSubview:lab];return v;
-}
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {return 1;}
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {return self.files.count;}
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {
- UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"file"];
- if(!cell)cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"file"];
- NSArray *list=p.section==0?self.files:(p.section==1?self.projects:self.isoFiles);
- NSDictionary *f=list[p.row];
+ UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"program-one-line"];
+ if(!cell)cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"program-one-line"];
+ NSDictionary *f=self.files[p.row];
  NSString *name=[f[@"name"] isKindOfClass:NSString.class]?f[@"name"]:@"?";
- if(p.section==1)name=[name stringByAppendingString:@".hbj"];
- if(p.section==2)name=[name stringByAppendingString:@".nc"];
- cell.textLabel.text=name;cell.textLabel.textColor=UIColor.whiteColor;
- cell.textLabel.font=[UIFont boldSystemFontOfSize:15];
- NSString *date=[f[@"modified"] isKindOfClass:NSString.class]?f[@"modified"]:@"";
+ NSString *when=[f[@"modified"] isKindOfClass:NSString.class]?f[@"modified"]:@"";
  id size=f[@"size"]?:@0;
- cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ • %@ B%@",date,size,p.section?@" • náhľad / návrh":@""];
- cell.detailTextLabel.textColor=[UIColor colorWithWhite:.74 alpha:1];
- cell.detailTextLabel.font=[UIFont systemFontOfSize:12];
- BOOL sel=p.section==0&&[name isEqualToString:self.selected];
- cell.backgroundColor=sel?[UIColor colorWithRed:.024 green:.32 blue:.33 alpha:1]:[UIColor colorWithRed:.018 green:.085 blue:.11 alpha:1];
- cell.accessoryType=sel?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone;
+ NSString *metadata=when.length?[NSString stringWithFormat:@"   %@  •  %@ B",when,size]:[NSString stringWithFormat:@"   %@ B",size];
+ NSMutableAttributedString *line=[[NSMutableAttributedString alloc] initWithString:name
+  attributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:16],NSForegroundColorAttributeName:UIColor.whiteColor}];
+ [line appendAttributedString:[[NSAttributedString alloc] initWithString:metadata attributes:
+  @{NSFontAttributeName:[UIFont systemFontOfSize:13],NSForegroundColorAttributeName:[UIColor colorWithWhite:.75 alpha:1]}]];
+ cell.textLabel.attributedText=line;
+ cell.textLabel.numberOfLines=1;cell.textLabel.adjustsFontSizeToFitWidth=YES;cell.textLabel.minimumScaleFactor=.75;
+ BOOL selected=[name isEqualToString:self.selected];
+ cell.backgroundColor=selected?[UIColor colorWithRed:.024 green:.32 blue:.33 alpha:1]:[UIColor colorWithRed:.018 green:.085 blue:.11 alpha:1];
+ cell.accessoryType=selected?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone;
  cell.tintColor=self.cyan;return cell;
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)p {
- if(p.section!=0){
-  [self alert:@"Toto je uložený návrh alebo ISO .nc, nie CAM program .600. V režime LOAD CAM FILE sa do stroja neposiela."];
-  return;
- }
  self.selected=self.files[p.row][@"name"];
  [self updateSelectedStatus];[self.table reloadData];
+}
+- (NSString *)encodedName {
+ NSMutableCharacterSet *safe=[[NSCharacterSet URLQueryAllowedCharacterSet] mutableCopy];
+ [safe removeCharactersInString:@"&=+#?/"];
+ return [self.selected stringByAddingPercentEncodingWithAllowedCharacters:safe];
 }
 - (void)updateSelectedStatus {
  self.selectedStatus.text=[NSString stringWithFormat:@"Vybraný v knižnici: %@",self.selected.length?self.selected:@"žiadny"];
@@ -423,6 +403,8 @@
  NSInteger sent=MAX(0,[transfer[@"sent"] respondsToSelector:@selector(integerValue)]?[transfer[@"sent"] integerValue]:0);
  NSInteger total=MAX(0,[transfer[@"total"] respondsToSelector:@selector(integerValue)]?[transfer[@"total"] integerValue]:0);
  NSInteger percent=MAX(0,MIN(100,[transfer[@"progress"] respondsToSelector:@selector(integerValue)]?[transfer[@"progress"] integerValue]:0));
+ // Prefer actual transferred byte count so the bar fills in step with the data.
+ if(total>0)percent=MAX(0,MIN(100,(NSInteger)llround(100.0*(double)sent/(double)total)));
  BOOL sending=[transfer[@"sending"] boolValue],receiving=[transfer[@"receiving"] boolValue];
  self.transferBusy=sending||receiving;
  [self.progressBar setProgress:(float)percent/100.f animated:YES];
