@@ -29,49 +29,112 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 @end
 @implementation CNCProfileView
 - (void)drawRect:(CGRect)rect {
- CGContextRef c=UIGraphicsGetCurrentContext();CGFloat w=rect.size.width,h=rect.size.height;
- CGContextSetFillColorWithColor(c,TBG().CGColor);CGContextFillRect(c,rect);
- CGContextSetLineWidth(c,1);CGContextSetStrokeColorWithColor(c,[UIColor colorWithRed:.13 green:.24 blue:.29 alpha:1].CGColor);
- for(CGFloat x=25;x<w;x+=44){CGContextMoveToPoint(c,x,0);CGContextAddLineToPoint(c,x,h);}
- for(CGFloat y=25;y<h;y+=44){CGContextMoveToPoint(c,0,y);CGContextAddLineToPoint(c,w,y);}CGContextStrokePath(c);
- NSDictionary *m=self.shape, *stock=m[@"stock"];NSArray *pts=[m[@"profile"] isKindOfClass:NSArray.class]?m[@"profile"]:@[];
- CGFloat dia=TNumber(stock[@"diameter"],0),length=TNumber(m[@"finished_length"],0);
- if(length<=0)length=TNumber(stock[@"length"],0);
- NSDictionary *attrs=@{NSForegroundColorAttributeName:TWHITE(),NSFontAttributeName:[UIFont systemFontOfSize:16]};
- if(dia<=0||length<=0||pts.count<2) {
-  [@"Zadaj polotovar a pridaj operáciu." drawAtPoint:CGPointMake(24,25) withAttributes:attrs];return;
+ CGContextRef context=UIGraphicsGetCurrentContext();
+ CGFloat w=rect.size.width,h=rect.size.height;
+ CGContextSetFillColorWithColor(context,TBG().CGColor);CGContextFillRect(context,rect);
+ NSDictionary *model=self.shape?:@{},*stock=[model[@"stock"] isKindOfClass:NSDictionary.class]?model[@"stock"]:@{};
+ NSArray *profile=[model[@"profile"] isKindOfClass:NSArray.class]?model[@"profile"]:@[];
+ double diameter=TNumber(stock[@"diameter"],0);
+ double length=TNumber(stock[@"length"],0);
+ if(length<=0)length=TNumber(model[@"finished_length"],0);
+ NSDictionary *baseText=@{NSForegroundColorAttributeName:TWHITE(),NSFontAttributeName:[UIFont systemFontOfSize:15]};
+ if(diameter<=0||length<=0||profile.count<2||w<200||h<160) {
+  [@"Zadaj polotovar a pridaj operáciu." drawAtPoint:CGPointMake(25,35) withAttributes:baseText];return;
  }
- CGFloat side=MAX(35,w*.055), usableW=w-2*side,usableH=h*.66;
- CGFloat scale=MIN(usableW/length,usableH/dia);
- CGFloat cw=length*scale, xL=(w-cw)/2,cy=h*.52,rr=dia*.5*scale;
- CGFloat (^X)(double)=^CGFloat(double z){return xL+(length-z)*scale;};
- CGFloat (^Y)(double)=^CGFloat(double r){return cy-r*scale;};
- CGContextSetFillColorWithColor(c,[UIColor colorWithRed:.35 green:.55 blue:.60 alpha:.19].CGColor);
- CGContextFillRect(c,CGRectMake(xL,cy-rr,cw,2*rr));
- CGFloat dashes[]={7,5}; CGContextSetLineDash(c,0,dashes,2);CGContextSetStrokeColorWithColor(c,[UIColor colorWithRed:.52 green:.71 blue:.74 alpha:1].CGColor);
- CGContextStrokeRectWithWidth(c,CGRectMake(xL,cy-rr,cw,2*rr),1.2);CGContextSetLineDash(c,0,NULL,0);
- UIBezierPath *fill=[UIBezierPath bezierPath],*edge=[UIBezierPath bezierPath];BOOL began=NO;
- for(id q in pts){if(![q isKindOfClass:NSArray.class]||[q count]<2)continue;
-  CGPoint p=CGPointMake(X(TNumber(q[0],0)),Y(TNumber(q[1],0)));
-  if(!began){[fill moveToPoint:p];[edge moveToPoint:p];began=YES;}else{[fill addLineToPoint:p];[edge addLineToPoint:p];}}
- if(!began)return;
- for(id q in [pts reverseObjectEnumerator]){if(![q isKindOfClass:NSArray.class]||[q count]<2)continue;
-   [fill addLineToPoint:CGPointMake(X(TNumber(q[0],0)),cy+TNumber(q[1],0)*scale)];}
- [fill closePath];[[UIColor colorWithRed:.57 green:.65 blue:.68 alpha:.9] setFill];[fill fill];
- [TWHITE() setStroke];fill.lineWidth=1.2;[fill stroke];
- UIColor *strokeColor=self.verified?[UIColor colorWithRed:.16 green:.95 blue:.52 alpha:1]:TCYAN(); [strokeColor setStroke];
- edge.lineWidth=3;[edge stroke];
- CGContextSetLineDash(c,0,dashes,2);CGContextSetStrokeColorWithColor(c,[UIColor colorWithRed:.3 green:.7 blue:.78 alpha:1].CGColor);
- CGContextMoveToPoint(c,xL-8,cy);CGContextAddLineToPoint(c,xL+cw+8,cy);CGContextStrokePath(c);CGContextSetLineDash(c,0,NULL,0);
- for(id v in m[@"partoffs"]?:@[]){double z=TNumber(v[@"z"],-1);if(z<0||z>length)continue;
-  CGContextSetStrokeColorWithColor(c,[UIColor orangeColor].CGColor);
-  CGContextMoveToPoint(c,X(z),cy-rr-8);CGContextAddLineToPoint(c,X(z),cy+rr+8);CGContextStrokePath(c);}
- [@"Z0" drawAtPoint:CGPointMake(X(0)-18,13) withAttributes:attrs];
- [[NSString stringWithFormat:@"Z−%.1f",length] drawAtPoint:CGPointMake(MAX(8,X(length)-4),13) withAttributes:attrs];
- [[NSString stringWithFormat:@"POLOTOVAR Ø%.2f   •   DĹŽKA %.2f mm",dia,length] drawAtPoint:CGPointMake(18,h-42) withAttributes:attrs];
- NSString *label=self.verified?@"SERVER: GEOMETRIA OVERENÁ":@"LOKÁLNY NÁHĽAD – NEOVERENÉ";
- [label drawAtPoint:CGPointMake(18,h-20) withAttributes:@{NSForegroundColorAttributeName:TCYAN(),NSFontAttributeName:[UIFont boldSystemFontOfSize:15]}];
+ // Lathe display convention: Z0 is the workpiece face on the RIGHT,
+ // negative Z extends to the LEFT; X0 is on the axis, +diameter is DOWN.
+ CGFloat left=76,right=w-30,axisY=77,bottom=h-54;
+ CGFloat radius=(CGFloat)diameter*.5;
+ CGFloat scale=MIN((right-left)/(CGFloat)length,(bottom-axisY)/MAX(radius,0.01));
+ if(scale<.01)return;
+ CGFloat z0=right,chuck=z0-(CGFloat)length*scale;
+ CGFloat (^ZX)(double)=^CGFloat(double z){return z0-(CGFloat)z*scale;};
+ CGFloat (^RY)(double)=^CGFloat(double r){return axisY+(CGFloat)r*scale;};
+ UIColor *minor=[UIColor colorWithRed:.09 green:.19 blue:.23 alpha:1];
+ UIColor *major=[UIColor colorWithRed:.17 green:.31 blue:.36 alpha:1];
+ UIColor *green=[UIColor colorWithRed:.24 green:.95 blue:.48 alpha:1];
+ UIColor *red=[UIColor colorWithRed:.96 green:.24 blue:.28 alpha:1];
+ // Draw 10 mm Z grid anchored at Z0, with rulers in the plot's top margin.
+ NSInteger zStep=length>220?50:(length>100?20:10);
+ for(NSInteger i=0;i<=MIN(120,(NSInteger)floor(length/zStep));i++){
+  double z=i*zStep;CGFloat x=ZX(z);
+  CGContextSetLineWidth(context,i==0?1.8:1);
+  CGContextSetStrokeColorWithColor(context,i==0?green.CGColor:major.CGColor);
+  CGContextMoveToPoint(context,x,axisY);CGContextAddLineToPoint(context,x,bottom+4);CGContextStrokePath(context);
+  CGContextSetStrokeColorWithColor(context,minor.CGColor);
+  CGContextMoveToPoint(context,x,29);CGContextAddLineToPoint(context,x,40);CGContextStrokePath(context);
+  NSString *tick=i==0?@"0":[NSString stringWithFormat:@"−%ld",(long)i*zStep];
+  CGFloat ox=i==0?-6:-14;
+  [tick drawAtPoint:CGPointMake(x+ox,9) withAttributes:
+   @{NSFontAttributeName:[UIFont boldSystemFontOfSize:13],NSForegroundColorAttributeName:(i==0?green:TWHITE())}];
+ }
+ // X is displayed as positive DIAMETER below the centerline, not radial depth.
+ NSInteger diaStep=diameter>160?40:(diameter>70?20:10);
+ for(NSInteger i=0;i<=MIN(100,(NSInteger)floor(diameter/diaStep));i++){
+  double d=i*diaStep;CGFloat y=RY(d*.5);
+  CGContextSetStrokeColorWithColor(context,major.CGColor);
+  CGContextSetLineWidth(context,1);
+  CGContextMoveToPoint(context,left-1,y);CGContextAddLineToPoint(context,right+4,y);CGContextStrokePath(context);
+  [[NSString stringWithFormat:@"Ø%ld",(long)i*diaStep] drawAtPoint:CGPointMake(6,y-9)
+   withAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:13],
+    NSForegroundColorAttributeName:i==0?TCYAN():TWHITE()}];
+ }
+ [@"Z (mm) → 0" drawAtPoint:CGPointMake(MAX(left,chuck),1)
+  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:13],NSForegroundColorAttributeName:TCYAN()}];
+ [@"X = Ø (+)" drawAtPoint:CGPointMake(5,axisY+19)
+  withAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:12],NSForegroundColorAttributeName:TCYAN()}];
+ // Centerline X0 is explicitly dashed across the workpiece.
+ CGFloat dash[]={7,6};CGContextSetLineDash(context,0,dash,2);
+ CGContextSetStrokeColorWithColor(context,[UIColor colorWithRed:.63 green:.81 blue:.83 alpha:1].CGColor);
+ CGContextSetLineWidth(context,1.8);
+ CGContextMoveToPoint(context,left,axisY);CGContextAddLineToPoint(context,right+7,axisY);
+ CGContextStrokePath(context);CGContextSetLineDash(context,0,NULL,0);
+ [@"X0 / OS OBROBKU" drawAtPoint:CGPointMake(MAX(left,chuck)+12,axisY-22)
+  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:13],NSForegroundColorAttributeName:TCYAN()}];
+ // Material is drawn on ONE side of the axis only; no mirrored second half.
+ CGContextSetFillColorWithColor(context,[UIColor colorWithRed:.29 green:.46 blue:.50 alpha:.16].CGColor);
+ CGContextFillRect(context,CGRectMake(chuck,axisY,right-chuck,radius*scale));
+ UIBezierPath *body=[UIBezierPath bezierPath],*edge=[UIBezierPath bezierPath];
+ BOOL began=NO;CGFloat firstX=0,lastX=0;
+ for(id value in profile){
+  if(![value isKindOfClass:NSArray.class]||[value count]<2)continue;
+  double z=TNumber(value[0],0),r=TNumber(value[1],0);
+  CGFloat x=ZX(z),y=RY(r);
+  if(!began){[body moveToPoint:CGPointMake(x,axisY)];[body addLineToPoint:CGPointMake(x,y)];[edge moveToPoint:CGPointMake(x,y)];began=YES;firstX=x;}
+  else {[body addLineToPoint:CGPointMake(x,y)];[edge addLineToPoint:CGPointMake(x,y)];}
+  lastX=x;
+ }
+ if(began){
+  [body addLineToPoint:CGPointMake(lastX,axisY)];[body closePath];
+  [[UIColor colorWithRed:.59 green:.66 blue:.69 alpha:.85] setFill];[body fill];
+  [[UIColor colorWithWhite:.93 alpha:.8] setStroke];body.lineWidth=1;[body stroke];
+  UIColor *outline=self.verified?green:TCYAN();[outline setStroke];edge.lineWidth=3;[edge stroke];
+ }
+ // Workpiece face / origin Z0 (green).
+ CGContextSetStrokeColorWithColor(context,green.CGColor);CGContextSetLineWidth(context,2.8);
+ CGContextMoveToPoint(context,z0,39);CGContextAddLineToPoint(context,z0,bottom+6);CGContextStrokePath(context);
+ [@"Z0" drawAtPoint:CGPointMake(z0-23,41)
+  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:16],NSForegroundColorAttributeName:green}];
+ // Red chuck/stock boundary at -stock.length; visual reference, NOT a verified collision boundary.
+ CGContextSetFillColorWithColor(context,[UIColor colorWithRed:.72 green:.10 blue:.13 alpha:.16].CGColor);
+ CGContextFillRect(context,CGRectMake(MAX(0,chuck-22),axisY,MIN(22,chuck),MAX(1,bottom-axisY)));
+ CGContextSetStrokeColorWithColor(context,red.CGColor);CGContextSetLineWidth(context,3);
+ CGContextMoveToPoint(context,chuck,39);CGContextAddLineToPoint(context,chuck,bottom+6);CGContextStrokePath(context);
+ [[NSString stringWithFormat:@"Z−%.0f",length] drawAtPoint:CGPointMake(MAX(2,chuck-21),43)
+  withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:15],NSForegroundColorAttributeName:red}];
+ [@"HRANICA UPÍNANIA • ORIENTAČNÁ" drawAtPoint:CGPointMake(MAX(3,chuck-15),bottom+8)
+  withAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:11],NSForegroundColorAttributeName:red}];
+ for(id item in model[@"partoffs"]?:@[]){
+  if(![item isKindOfClass:NSDictionary.class])continue;
+  double z=TNumber(item[@"z"],-1);if(z<0||z>length)continue;
+  CGContextSetStrokeColorWithColor(context,[UIColor orangeColor].CGColor);CGContextSetLineWidth(context,1.5);
+  CGContextMoveToPoint(context,ZX(z),axisY+2);CGContextAddLineToPoint(context,ZX(z),RY(radius));CGContextStrokePath(context);
+ }
+ NSString *note=self.verified?@"SERVER: GEOMETRIA OVERENÁ • nie kolízie":@"LOKÁLNY NÁHĽAD – NEOVERENÉ";
+ [note drawAtPoint:CGPointMake(10,h-20) withAttributes:
+  @{NSForegroundColorAttributeName:TCYAN(),NSFontAttributeName:[UIFont boldSystemFontOfSize:14]}];
 }
+
 @end
 
 @interface CNCTurningController:UIViewController <UITableViewDataSource,UITableViewDelegate,UITextFieldDelegate>
@@ -120,8 +183,8 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (void)viewDidLoad {
  [super viewDidLoad];self.view.backgroundColor=TBG();
  UIButton *back=[self button:@"‹ SPÄŤ" action:@selector(close)];back.tag=900;[self.view addSubview:back];
- UILabel *heading=[self label:@"AlphaLink CAM iPad V1.6 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
- self.status=[self label:@"NOVÝ NÁVRH • geometria bude overená Raspberry Pi"];self.status.tag=902;[self.view addSubview:self.status];
+ UILabel *heading=[self label:@"AlphaLink CAM iPad V1.8 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
+ self.status=[self label:@"NOVÝ NÁVRH • geometria bude overená Raspberry Pi"];self.status.tag=902;self.status.textAlignment=NSTextAlignmentRight;self.status.adjustsFontSizeToFitWidth=YES;self.status.minimumScaleFactor=.72;self.status.font=[UIFont systemFontOfSize:14];[self.view addSubview:self.status];
  self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"ZADANIE",@"OPERÁCIE",@"2D NÁHĽAD",@"G-KÓD",@"NÁVRHY"]];self.tabs.selectedSegmentIndex=0;
  [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
  [self.tabs addTarget:self action:@selector(switchTab) forControlEvents:UIControlEventValueChanged];[self.view addSubview:self.tabs];
@@ -147,8 +210,11 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  self.gcode=[[UITextView alloc] initWithFrame:CGRectZero];self.gcode.backgroundColor=TPANEL();self.gcode.textColor=TWHITE();self.gcode.font=[UIFont fontWithName:@"Menlo" size:18]?:[UIFont systemFontOfSize:18];self.gcode.layer.cornerRadius=8;[self.codePage addSubview:self.gcode];
  NSArray *codeTexts=@[@"GENEROVAŤ KÓD",@"ULOŽIŤ .600 NA PI"];NSArray *codeSEL=@[@"generateCode",@"saveCode"];
  for(NSInteger i=0;i<2;i++){UIButton *b=[self button:codeTexts[i] action:NSSelectorFromString(codeSEL[i])];b.tag=945+i;[self.codePage addSubview:b];}
- self.projectsTable=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];self.projectsTable.backgroundColor=TBG();self.projectsTable.separatorColor=TPANEL();self.projectsTable.rowHeight=60;self.projectsTable.dataSource=self;self.projectsTable.delegate=self;[self.projectsPage addSubview:self.projectsTable];
- NSArray *projectTexts=@[@"OBNOVIŤ ZOZNAM",@"OTVORIŤ NÁVRH",@"ULOŽIŤ .HBJ",@"NOVÝ NÁVRH"];NSArray *projectSEL=@[@"refreshProjects",@"openProject",@"saveProject",@"newProject"];
+ self.projectsTable=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];self.projectsTable.backgroundColor=TBG();self.projectsTable.separatorColor=TPANEL();self.projectsTable.rowHeight=60;self.projectsTable.dataSource=self;self.projectsTable.delegate=self;
+ UILabel *noProjects=[self label:@"Zatiaľ nie sú uložené žiadne návrhy .HBJ.\nV záložke ZADANIE pridaj operácie a tu stlač ULOŽIŤ .HBJ."];noProjects.textAlignment=NSTextAlignmentCenter;noProjects.numberOfLines=4;
+ noProjects.textColor=[UIColor colorWithWhite:.72 alpha:1];noProjects.font=[UIFont systemFontOfSize:19];
+ self.projectsTable.backgroundView=noProjects;[self.projectsPage addSubview:self.projectsTable];
+ NSArray *projectTexts=@[@"OBNOVIŤ ZOZNAM",@"OTVORIŤ NÁVRH",@"ULOŽIŤ .HBJ",@"NOVÝ NÁVRH",@"ZMAZAŤ .HBJ"];NSArray *projectSEL=@[@"refreshProjects",@"openProject",@"saveProject",@"newProject",@"deleteProject"];
  for(NSInteger i=0;i<4;i++){UIButton *b=[self button:projectTexts[i] action:NSSelectorFromString(projectSEL[i])];b.tag=950+i;[self.projectsPage addSubview:b];}
  [self fillParams:nil];[self switchTab];[self localPreview];
 }
@@ -156,10 +222,10 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  [super viewDidLayoutSubviews];
  CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height,top=self.view.safeAreaInsets.top+8,bottom=self.view.safeAreaInsets.bottom;
  [self.view viewWithTag:900].frame=CGRectMake(16,top,100,48);
- [self.view viewWithTag:901].frame=CGRectMake(128,top,w-144,48);
- self.status.frame=CGRectMake(16,top+51,w-32,44);
- self.tabs.frame=CGRectMake(16,top+100,w-32,45);
- CGRect page=CGRectMake(14,top+155,w-28,MAX(150,h-bottom-top-167));
+ [self.view viewWithTag:901].frame=CGRectMake(128,top,MIN(410,w*.42),48);
+ self.status.frame=CGRectMake(MAX(500,w*.53),top+2,w-MAX(500,w*.53)-18,44);
+ self.tabs.frame=CGRectMake(16,top+53,w-32,44);
+ CGRect page=CGRectMake(14,top+105,w-28,MAX(150,h-bottom-top-117));
  NSArray *pages=@[self.inputPage,self.operationPage,self.previewPage,self.codePage,self.projectsPage];
  for(UIView *p in pages)p.frame=page;
  self.inputScroll.frame=self.inputPage.bounds;
@@ -176,7 +242,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  [self.codePage viewWithTag:945].frame=CGRectMake(0,ph-60,(pw-10)/2,55);
  [self.codePage viewWithTag:946].frame=CGRectMake((pw+10)/2,ph-60,(pw-10)/2,55);
  self.projectsTable.frame=CGRectMake(0,0,pw,MAX(100,ph-72));
- CGFloat pb=(pw-3*10)/4;for(NSInteger i=0;i<4;i++)[self.projectsPage viewWithTag:950+i].frame=CGRectMake(i*(pb+10),ph-60,pb,55);
+ CGFloat pb=(pw-4*8)/5;for(NSInteger i=0;i<5;i++)[self.projectsPage viewWithTag:950+i].frame=CGRectMake(i*(pb+8),ph-60,pb,55);
 }
 - (void)adjustNumber:(UIButton *)button {
  NSInteger index=(button.tag-2500)/2;
@@ -486,9 +552,36 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (void)refreshProjects {
  [self request:@"/api/turning/projects" body:nil finished:^(NSDictionary *j,NSError *e){
   if(e||![j[@"projects"] isKindOfClass:NSArray.class]){self.status.text=[NSString stringWithFormat:@"Načítanie návrhov zlyhalo: %@",e.localizedDescription?:@"server neodpovedal"];return;}
-  self.projects=j[@"projects"];self.selectedProject=-1;[self.projectsTable reloadData];
+  self.projects=j[@"projects"];self.selectedProject=-1;self.projectsTable.backgroundView.hidden=self.projects.count>0;[self.projectsTable reloadData];
   self.status.text=[NSString stringWithFormat:@"Na Raspberry Pi: %lu návrhov .hbj",(unsigned long)self.projects.count];
  }];
+}
+- (void)deleteProject {
+ if(self.busy)return;
+ if(self.selectedProject<0||self.selectedProject>=self.projects.count){[self showError:@"Vyber návrh .hbj zo zoznamu."];return;}
+ NSString *name=TString(self.projects[self.selectedProject][@"name"]);
+ if(!name.length){[self showError:@"Chýba názov vybraného návrhu."];return;}
+ UIAlertController *confirm=[UIAlertController alertControllerWithTitle:@"Odstrániť návrh z Raspberry Pi?"
+ message:[NSString stringWithFormat:@"Vymaže sa len %@.hbj z knižnice návrhov na Pi. Strojový .600 program ani pamäť CNC sa tým nemenia.",name] preferredStyle:UIAlertControllerStyleAlert];
+ [confirm addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ [confirm addAction:[UIAlertAction actionWithTitle:@"ZMAZAŤ .HBJ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+  NSString *encoded=[name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+  NSURL *url=[NSURL URLWithString:[self.baseURL stringByAppendingFormat:@"/api/turning/delete?name=%@",encoded]];
+  NSMutableURLRequest *req=[NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:25];
+  req.HTTPMethod=@"POST";
+  self.busy=YES;
+  [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data,NSURLResponse *resp,NSError *error){
+   NSDictionary *j=nil;if(data.length){id v=[NSJSONSerialization JSONObjectWithData:data options:0 error:nil];if([v isKindOfClass:NSDictionary.class])j=v;}
+   NSInteger code=[resp isKindOfClass:NSHTTPURLResponse.class]?((NSHTTPURLResponse *)resp).statusCode:0;
+   dispatch_async(dispatch_get_main_queue(),^{
+    self.busy=NO;
+    if(error||code<200||code>=300||![j[@"deleted"] boolValue]){[self showError:[NSString stringWithFormat:@"Vymazanie .hbj zlyhalo: %@",error.localizedDescription?:TString(j[@"error"]).length?j[@"error"]:@"HTTP chyba"]];return;}
+    self.status.text=[NSString stringWithFormat:@"Návrh %@.hbj bol odstránený z Raspberry Pi.",name];
+    [self refreshProjects];
+   });
+  }] resume];
+ }]];
+ [self presentViewController:confirm animated:YES completion:nil];
 }
 - (void)openProject {
  if(self.selectedProject<0||self.selectedProject>=self.projects.count){[self showError:@"Vyber uložený návrh .hbj."];return;}
