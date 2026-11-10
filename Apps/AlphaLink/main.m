@@ -59,7 +59,7 @@
  [super viewDidLoad];
  self.view.backgroundColor=self.bg;self.files=[NSMutableArray array];self.projects=[NSMutableArray array];self.isoFiles=[NSMutableArray array];
  self.machineMode=0;self.pageIndex=2;self.transferBusy=NO;
- self.headerTitle=[self dashboardLabel:@"ALPHALINK CAM V1.8" size:22 color:UIColor.whiteColor];
+ self.headerTitle=[self dashboardLabel:@"ALPHALINK CAM V1.8.1" size:22 color:UIColor.whiteColor];
  self.headerTitle.font=[UIFont boldSystemFontOfSize:22];[self.view addSubview:self.headerTitle];
  self.piLight=[self dashboardLabel:@"● PI ODPOJENÉ" size:14 color:[UIColor colorWithRed:1 green:.58 blue:.30 alpha:1]];
  self.piLight.textAlignment=NSTextAlignmentCenter;[self.view addSubview:self.piLight];
