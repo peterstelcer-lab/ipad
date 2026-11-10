@@ -105,7 +105,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  CGFloat chuck=cx-(CGFloat)length*scale;
  CGFloat (^zx)(double)=^CGFloat(double z){return cx-(CGFloat)z*scale;};
  CGFloat (^yr)(double)=^CGFloat(double r){return cy-(CGFloat)r*scale;};
- CGFloat (^yb)(double r){return cy+(CGFloat)r*scale;};
+ CGFloat (^yb)(double){return cy+(CGFloat)r*scale;};
  // Grid and quantitative rulers are anchored at the WORK FACE Z0 and X0.
  CGContextSaveGState(c);CGContextClipToRect(c,CGRectMake(plotLeft,plotTop,plotRight-plotLeft,plotBottom-plotTop));
  NSInteger minorZ=length>220?20:(length>90?10:5);
