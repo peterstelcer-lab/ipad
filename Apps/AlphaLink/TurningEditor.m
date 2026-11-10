@@ -45,11 +45,15 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
  // negative Z extends to the LEFT; X0 is on the axis, +diameter is DOWN.
  CGFloat left=76,right=w-30,axisY=77,bottom=h-54;
  CGFloat radius=(CGFloat)diameter*.5;
- CGFloat scale=MIN((right-left)/(CGFloat)length,(bottom-axisY)/MAX(radius,0.01));
+ // The diagram has a diameter ruler (X), not a radial ruler.
+ // Use the SAME pixels-per-millimetre for Z LENGTH and displayed X DIAMETER.
+ // The model profile is stored as a radius, therefore convert r to Ø = 2*r
+ // before plotting. A Ø40 x Z40 stock must occupy a 40:40 square on screen.
+ CGFloat scale=MIN((right-left)/(CGFloat)length,(bottom-axisY)/MAX((CGFloat)diameter,0.01));
  if(scale<.01)return;
  CGFloat z0=right,chuck=z0-(CGFloat)length*scale;
  CGFloat (^ZX)(double)=^CGFloat(double z){return z0-(CGFloat)z*scale;};
- CGFloat (^RY)(double)=^CGFloat(double r){return axisY+(CGFloat)r*scale;};
+ CGFloat (^RY)(double)=^CGFloat(double r){return axisY+(CGFloat)(2.0*r)*scale;};
  UIColor *minor=[UIColor colorWithRed:.09 green:.19 blue:.23 alpha:1];
  UIColor *major=[UIColor colorWithRed:.17 green:.31 blue:.36 alpha:1];
  UIColor *green=[UIColor colorWithRed:.24 green:.95 blue:.48 alpha:1];
@@ -93,7 +97,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
   withAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:13],NSForegroundColorAttributeName:TCYAN()}];
  // Material is drawn on ONE side of the axis only; no mirrored second half.
  CGContextSetFillColorWithColor(context,[UIColor colorWithRed:.29 green:.46 blue:.50 alpha:.16].CGColor);
- CGContextFillRect(context,CGRectMake(chuck,axisY,right-chuck,radius*scale));
+ CGContextFillRect(context,CGRectMake(chuck,axisY,right-chuck,diameter*scale));
  UIBezierPath *body=[UIBezierPath bezierPath],*edge=[UIBezierPath bezierPath];
  BOOL began=NO;CGFloat firstX=0,lastX=0;
  for(id value in profile){
@@ -183,7 +187,7 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
 - (void)viewDidLoad {
  [super viewDidLoad];self.view.backgroundColor=TBG();
  UIButton *back=[self button:@"‹ SPÄŤ" action:@selector(close)];back.tag=900;[self.view addSubview:back];
- UILabel *heading=[self label:@"AlphaLink CAM iPad V1.8 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
+ UILabel *heading=[self label:@"AlphaLink CAM iPad V1.8.1 • EDITOR"];heading.tag=901;heading.font=[UIFont boldSystemFontOfSize:21];heading.textColor=TCYAN();[self.view addSubview:heading];
  self.status=[self label:@"NOVÝ NÁVRH • geometria bude overená Raspberry Pi"];self.status.tag=902;self.status.textAlignment=NSTextAlignmentRight;self.status.adjustsFontSizeToFitWidth=YES;self.status.minimumScaleFactor=.72;self.status.font=[UIFont systemFontOfSize:14];[self.view addSubview:self.status];
  self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"ZADANIE",@"OPERÁCIE",@"2D NÁHĽAD",@"G-KÓD",@"NÁVRHY"]];self.tabs.selectedSegmentIndex=0;
  [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:17]} forState:UIControlStateNormal];
