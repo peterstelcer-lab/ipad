@@ -291,6 +291,7 @@
  } else {
   self.status.text=@"ALPHALINK • server ONLINE • Harrison Alpha 400";
  }
+ [self updateConnectionPanel:info];
  [self refreshFiles];
 }
 - (void)checkAlphaLinkAfterNUM:(NSError *)numError {
@@ -312,9 +313,9 @@
  self.machineMode=0;self.connectedBase=nil;
  self.status.text=@"Pripájam AlphaLink / Harrison Alpha 400...";
  [self request:@"GET" path:@"/api/status" body:nil done:^(NSDictionary *j,NSError *e){
-  if(e){self.status.text=@"ALPHALINK: OFFLINE";[self failure:j error:e];return;}
+  if(e){self.status.text=@"ALPHALINK: OFFLINE";[self setPiOnline:NO];[self failure:j error:e];return;}
   BOOL valid=[j isKindOfClass:NSDictionary.class]&&(j[@"transfer"]||j[@"serial_port"]||j[@"program_count"]||j[@"ports"]);
-  if(!valid){self.status.text=@"Server odpovedá, ale nie je AlphaLink";[self alert:@"Server nemá očakávané AlphaLink API /api/status. Skontroluj port 8081."];return;}
+  if(!valid){self.status.text=@"Server odpovedá, ale nie je AlphaLink";[self setPiOnline:NO];[self alert:@"Server nemá očakávané AlphaLink API /api/status. Skontroluj port 8081."];return;}
   [self applyMode:2 info:j];
  }];
 }
@@ -322,25 +323,268 @@
  if(![self isReady])return;
  NSInteger mode=self.machineMode;
  [self request:@"GET" path:@"/api/files" body:nil done:^(NSDictionary *j,NSError *e){
-  if(e || ![j isKindOfClass:NSDictionary.class] || (mode==1 && ![j[@"ok"] boolValue])) {
-    [self failure:j error:e]; return;
+  if(e||![j isKindOfClass:NSDictionary.class]){[self failure:j error:e];return;}
+  NSArray *incoming=[j[@"files"] isKindOfClass:NSArray.class]?j[@"files"]:@[];
+  NSMutableArray *clean=[NSMutableArray array];
+  for(id item in incoming) {
+   if(![item isKindOfClass:NSDictionary.class])continue;
+   NSString *name=[item[@"name"] isKindOfClass:NSString.class]?item[@"name"]:@"";
+   if(name.length && (mode!=2||[[name lowercaseString] hasSuffix:@".600"]))[clean addObject:item];
   }
-  NSArray *a=[j[@"files"] isKindOfClass:NSArray.class]?j[@"files"]:@[];
-  NSMutableArray *valid=[NSMutableArray array];
-  for(id item in a) {
-    if(![item isKindOfClass:NSDictionary.class])continue;
-    NSString *name=[item[@"name"] isKindOfClass:NSString.class]?item[@"name"]:@"";
-    if(mode==2 && ![[name lowercaseString] hasSuffix:@".600"])continue;
-    if(name.length)[valid addObject:item];
+  self.files=clean;
+  if(self.selected.length) {
+   BOOL exists=NO;for(NSDictionary *f in clean)if([f[@"name"] isEqualToString:self.selected]){exists=YES;break;}
+   if(!exists){self.selected=nil;self.editorOriginal=nil;}
   }
-  self.files=valid; [self.table reloadData];
-  self.status.text=[NSString stringWithFormat:@"%@ • %lu programov na Raspberry Pi",mode==2?@"ALPHALINK":@"NUM 1040",(unsigned long)valid.count];
+  [self updateSelectedStatus];
+  [self.table reloadData];
+  self.status.text=[NSString stringWithFormat:@"ALPHALINK • %lu programov na Raspberry Pi",(unsigned long)clean.count];
+ }];
+ if(mode==2){
+  [self request:@"GET" path:@"/api/turning/projects" body:nil done:^(NSDictionary *j,NSError *e){
+   if(!e && [j[@"projects"] isKindOfClass:NSArray.class])self.projects=[j[@"projects"] mutableCopy];
+   else [self.projects removeAllObjects];
+   [self.table reloadData];
+  }];
+  [self request:@"GET" path:@"/api/review/list" body:nil done:^(NSDictionary *j,NSError *e){
+   if(!e && [j[@"files"] isKindOfClass:NSArray.class])self.isoFiles=[j[@"files"] mutableCopy];
+   else [self.isoFiles removeAllObjects];
+   [self.table reloadData];
+  }];
+  [self fetchTransferStatus];
+ }
+}
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {return self.machineMode==2?3:1;}
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
+ if(section==1)return self.projects.count;
+ if(section==2)return self.isoFiles.count;
+ return self.files.count;
+}
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+ if(section==1)return [NSString stringWithFormat:@"ULOŽENÉ NÁVRHY .HBJ (%lu) • NEODOSIELAJÚ SA",(unsigned long)self.projects.count];
+ if(section==2)return [NSString stringWithFormat:@"ISO G-KÓDY .NC (%lu) • REŽIM READ",(unsigned long)self.isoFiles.count];
+ return [NSString stringWithFormat:@"STROJOVÉ PROGRAMY .600 (%lu)",(unsigned long)self.files.count];
+}
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+ UIView *v=[UIView new];v.backgroundColor=[UIColor colorWithRed:.07 green:.19 blue:.24 alpha:1];
+ UILabel *lab=[self dashboardLabel:[self tableView:tableView titleForHeaderInSection:section] size:13 color:self.cyan];
+ lab.font=[UIFont boldSystemFontOfSize:13];lab.frame=CGRectMake(9,2,tableView.bounds.size.width-18,23);[v addSubview:lab];return v;
+}
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {
+ UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"file"];
+ if(!cell)cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"file"];
+ NSArray *list=p.section==0?self.files:(p.section==1?self.projects:self.isoFiles);
+ NSDictionary *f=list[p.row];
+ NSString *name=[f[@"name"] isKindOfClass:NSString.class]?f[@"name"]:@"?";
+ if(p.section==1)name=[name stringByAppendingString:@".hbj"];
+ if(p.section==2)name=[name stringByAppendingString:@".nc"];
+ cell.textLabel.text=name;cell.textLabel.textColor=UIColor.whiteColor;
+ cell.textLabel.font=[UIFont boldSystemFontOfSize:15];
+ NSString *date=[f[@"modified"] isKindOfClass:NSString.class]?f[@"modified"]:@"";
+ id size=f[@"size"]?:@0;
+ cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ • %@ B%@",date,size,p.section?@" • náhľad / návrh":@""];
+ cell.detailTextLabel.textColor=[UIColor colorWithWhite:.74 alpha:1];
+ cell.detailTextLabel.font=[UIFont systemFontOfSize:12];
+ BOOL sel=p.section==0&&[name isEqualToString:self.selected];
+ cell.backgroundColor=sel?[UIColor colorWithRed:.024 green:.32 blue:.33 alpha:1]:[UIColor colorWithRed:.018 green:.085 blue:.11 alpha:1];
+ cell.accessoryType=sel?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone;
+ cell.tintColor=self.cyan;return cell;
+}
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)p {
+ if(p.section!=0){
+  [self alert:@"Toto je uložený návrh alebo ISO .nc, nie CAM program .600. V režime LOAD CAM FILE sa do stroja neposiela."];
+  return;
+ }
+ self.selected=self.files[p.row][@"name"];
+ [self updateSelectedStatus];[self.table reloadData];
+}
+- (void)updateSelectedStatus {
+ self.selectedStatus.text=[NSString stringWithFormat:@"Vybraný v knižnici: %@",self.selected.length?self.selected:@"žiadny"];
+}
+
+- (NSString *)encodedName {NSMutableCharacterSet *safe=[[NSCharacterSet URLQueryAllowedCharacterSet] mutableCopy]; [safe removeCharactersInString:@"&=+#?/"]; return [self.selected stringByAddingPercentEncodingWithAllowedCharacters:safe];}
+- (void)setPiOnline:(BOOL)online {
+ self.piLight.text=online?@"● PI PRIPOJENÉ":@"● PI ODPOJENÉ";
+ self.piLight.textColor=online?[UIColor colorWithRed:.25 green:1 blue:.53 alpha:1]:[UIColor colorWithRed:1 green:.47 blue:.35 alpha:1];
+ self.machineLight.text=@"● CNC PRÍJEM NEOVERENÝ";
+ self.machineLight.textColor=[UIColor colorWithRed:1 green:.74 blue:.29 alpha:1];
+}
+- (void)updateConnectionPanel:(NSDictionary *)statusInfo {
+ [self setPiOnline:self.machineMode==2];
+ NSString *profile=[statusInfo[@"profile"] isKindOfClass:NSString.class]?statusInfo[@"profile"]:@"9600 / EVEN / 7 / 2 / XON-XOFF / CAM RAW";
+ NSString *port=[statusInfo[@"serial_port"] isKindOfClass:NSString.class]?statusInfo[@"serial_port"]:@"neznámy";
+ self.profileStatus.text=[NSString stringWithFormat:@"Profil: %@\nPort: %@",profile,port];
+ NSDictionary *transfer=[statusInfo[@"transfer"] isKindOfClass:NSDictionary.class]?statusInfo[@"transfer"]:nil;
+ NSDictionary *queue=[statusInfo[@"queue"] isKindOfClass:NSDictionary.class]?statusInfo[@"queue"]:nil;
+ if(transfer)[self updateTransferPanel:transfer queue:queue];
+}
+- (void)updateTransferPanel:(NSDictionary *)transfer queue:(NSDictionary *)queue {
+ if(![transfer isKindOfClass:NSDictionary.class])return;
+ NSInteger sent=MAX(0,[transfer[@"sent"] respondsToSelector:@selector(integerValue)]?[transfer[@"sent"] integerValue]:0);
+ NSInteger total=MAX(0,[transfer[@"total"] respondsToSelector:@selector(integerValue)]?[transfer[@"total"] integerValue]:0);
+ NSInteger percent=MAX(0,MIN(100,[transfer[@"progress"] respondsToSelector:@selector(integerValue)]?[transfer[@"progress"] integerValue]:0));
+ BOOL sending=[transfer[@"sending"] boolValue],receiving=[transfer[@"receiving"] boolValue];
+ self.transferBusy=sending||receiving;
+ [self.progressBar setProgress:(float)percent/100.f animated:YES];
+ NSInteger rest=MAX(0,total-sent);
+ self.progressStatus.text=[NSString stringWithFormat:@"%ld / %ld B • %ld %% • zostáva %ld B",(long)sent,(long)total,(long)percent,(long)rest];
+ NSString *msg=[transfer[@"message"] isKindOfClass:NSString.class]?transfer[@"message"]:@"";
+ NSString *filename=[transfer[@"file"] isKindOfClass:NSString.class]?transfer[@"file"]:@"";
+ NSString *phase=sending?@"ODOSIELANIE":(receiving?@"PRÍJEM":@"IDLE");
+ self.transferStatus.text=[NSString stringWithFormat:@"%@ • %@\n%@",phase,filename,msg.length?msg:@"Bez aktívneho prenosu."];
+ BOOL error=!self.transferBusy && [transfer[@"finished"] isKindOfClass:NSString.class] && ![transfer[@"ok"] boolValue];
+ self.transferStatus.textColor=error?[UIColor colorWithRed:1 green:.43 blue:.39 alpha:1]:(self.transferBusy?[UIColor colorWithRed:.95 green:.75 blue:.34 alpha:1]:UIColor.whiteColor);
+ NSString *queued=[queue[@"name"] isKindOfClass:NSString.class]?queue[@"name"]:@"";
+ self.queuedName=queued.length?queued:nil;
+ self.queueStatus.text=queued.length?[NSString stringWithFormat:@"FRONTA • %@",queued]:@"FRONTA NA ODOSLANIE • prázdna";
+ self.queueClearButton.enabled=queued.length>0 && !self.transferBusy;
+}
+- (void)fetchTransferStatus {
+ if(self.machineMode!=2 || ![self.connectedBase isEqualToString:[self base]])return;
+ [self request:@"GET" path:@"/api/transfer/status" body:nil done:^(NSDictionary *j,NSError *e){
+  if(e){[self setPiOnline:NO];self.transferStatus.text=@"Raspberry Pi neodpovedá.";return;}
+  [self setPiOnline:YES];
+  [self updateTransferPanel:j[@"transfer"] queue:j[@"queue"]];
  }];
 }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section{return self.files.count;}
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)p {UITableViewCell *c=[tableView dequeueReusableCellWithIdentifier:@"file"];if(!c)c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"file"];NSDictionary *f=self.files[p.row];NSString *n=f[@"name"]?:@"?";c.textLabel.text=n;c.textLabel.textColor=[UIColor whiteColor]; c.detailTextLabel.text=[NSString stringWithFormat:@"%@ bytes",f[@"size"]?:@0];c.detailTextLabel.textColor=[UIColor lightGrayColor];c.backgroundColor=[n isEqualToString:self.selected]?[UIColor colorWithRed:.05 green:.25 blue:.29 alpha:1]:self.bg;return c;}
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)p {self.selected=self.files[p.row][@"name"];[self.table reloadData];}
-- (NSString *)encodedName {NSMutableCharacterSet *safe=[[NSCharacterSet URLQueryAllowedCharacterSet] mutableCopy]; [safe removeCharactersInString:@"&=+#?/"]; return [self.selected stringByAddingPercentEncodingWithAllowedCharacters:safe];}
+- (void)uploadToPi {
+ if(![self isReady]||self.transferBusy)return;
+ UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initWithDocumentTypes:@[@"public.data",@"public.item"] inMode:UIDocumentPickerModeImport];
+ picker.delegate=self;picker.modalPresentationStyle=UIModalPresentationFormSheet;
+ [self presentViewController:picker animated:YES completion:nil];
+}
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+ NSURL *file=urls.firstObject;
+ if(!file)return;
+ NSString *name=file.lastPathComponent;
+ if(![[name lowercaseString] hasSuffix:@".600"]){[self alert:@"Vyber súbor s príponou .600. ISO .nc vyžaduje samostatný režim READ."];return;}
+ NSError *readError=nil;NSData *payload=[NSData dataWithContentsOfURL:file options:0 error:&readError];
+ if(!payload || readError){[self alert:@"Nepodarilo sa prečítať vybraný súbor iPadu."];return;}
+ if(payload.length==0 || payload.length>16*1024*1024){[self alert:@"Súbor je prázdny alebo prekračuje limit 16 MB."];return;}
+ BOOL collision=NO;for(NSDictionary *row in self.files)if([row[@"name"] isEqualToString:name]){collision=YES;break;}
+ if(collision){
+  UIAlertController *dialog=[UIAlertController alertControllerWithTitle:@"Existujúci súbor na Raspberry Pi" message:[NSString stringWithFormat:@"%@ už existuje. Nahratie ho nahradí. Pred prepísaním zálohuj pôvodný súbor.",name] preferredStyle:UIAlertControllerStyleAlert];
+  [dialog addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+  [dialog addAction:[UIAlertAction actionWithTitle:@"NAHRADIŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){[self uploadData:payload name:name];}]];
+  [self presentViewController:dialog animated:YES completion:nil];
+ } else [self uploadData:payload name:name];
+}
+- (void)uploadData:(NSData *)payload name:(NSString *)name {
+ if(![self isReady]||self.transferBusy)return;
+ NSURL *url=[NSURL URLWithString:[[self base] stringByAppendingString:@"/api/upload"]];
+ NSMutableURLRequest *req=[NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:45];
+ req.HTTPMethod=@"POST";req.HTTPBody=payload;
+ [req setValue:@"application/octet-stream" forHTTPHeaderField:@"Content-Type"];
+ NSString *encoded=[name stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
+ [req setValue:encoded forHTTPHeaderField:@"X-Filename"];
+ self.status.text=[NSString stringWithFormat:@"Nahrávam %@ na Raspberry Pi...",name];
+ [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data,NSURLResponse *response,NSError *e){
+  id responseObj=data.length?[NSJSONSerialization JSONObjectWithData:data options:0 error:nil]:nil;
+  NSDictionary *json=[responseObj isKindOfClass:NSDictionary.class]?responseObj:nil;
+  NSInteger code=[response isKindOfClass:NSHTTPURLResponse.class]?((NSHTTPURLResponse *)response).statusCode:0;
+  dispatch_async(dispatch_get_main_queue(),^{
+   if(e || code<200 || code>=300 || ![json[@"stored"] boolValue]){
+    [self alert:[NSString stringWithFormat:@"Nahratie zlyhalo: %@",json[@"error"]?:e.localizedDescription?:@"neznáma chyba"]];
+    return;
+   }
+   NSDictionary *valid=[json[@"validation"] isKindOfClass:NSDictionary.class]?json[@"validation"]:nil;
+   self.status.text=[NSString stringWithFormat:@"%@ • %lu B uložených do Pi",name,(unsigned long)payload.length];
+   self.selected=name;[self updateSelectedStatus];[self refreshFiles];
+   NSString *check=[valid[@"valid"] boolValue]?@"Prešiel formálnou kontrolou.":@"NEPREŠIEL formálnou kontrolou; neposielaj ho do CNC.";
+   [self alert:[NSString stringWithFormat:@"%@\n%@",name,check]];
+  });
+ }] resume];
+}
+- (void)deleteFromPi {
+ if(![self isReady]||self.transferBusy)return;
+ if(!self.selected.length){[self alert:@"Najprv vyber súbor .600 z knižnice."];return;}
+ NSString *name=[self.selected copy];
+ UIAlertController *dialog=[UIAlertController alertControllerWithTitle:@"Vymazať súbor z Raspberry Pi?"
+ message:[NSString stringWithFormat:@"Vymazať iba %@ z Raspberry Pi? Obsah CNC stroja sa nemení. Tento krok nemožno vrátiť bez zálohy.",name] preferredStyle:UIAlertControllerStyleAlert];
+ [dialog addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ [dialog addAction:[UIAlertAction actionWithTitle:@"VYMAZAŤ Z PI" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+  NSString *url=[@"/api/delete?name=" stringByAppendingString:[self encodedName]];
+  [self request:@"POST" path:url body:nil done:^(NSDictionary *j,NSError *e){
+   if(e||![j[@"ok"] boolValue]){[self failure:j error:e];return;}
+   self.selected=nil;self.queuedName=nil;[self refreshFiles];
+  }];
+ }]];
+ [self presentViewController:dialog animated:YES completion:nil];
+}
+- (void)validateSelected {
+ if(![self isReady] || !self.selected.length){[self alert:@"Vyber program .600 na kontrolu."];return;}
+ NSString *name=[self.selected copy];
+ [self request:@"GET" path:[@"/api/file?name=" stringByAppendingString:[self encodedName]] body:nil done:^(NSDictionary *j,NSError *e){
+  if(e){[self failure:j error:e];return;}
+  NSDictionary *v=[j[@"validation"] isKindOfClass:NSDictionary.class]?j[@"validation"]:nil;
+  if(!v){[self alert:@"Server nevrátil kontrolu programu."];return;}
+  BOOL ok=[v[@"valid"] boolValue];
+  NSArray *errors=[v[@"errors"] isKindOfClass:NSArray.class]?v[@"errors"]:@[];
+  NSArray *warnings=[v[@"warnings"] isKindOfClass:NSArray.class]?v[@"warnings"]:@[];
+  self.validationStatus.text=[NSString stringWithFormat:@"KONTROLA %@: %@ • %@ B\n%lu chýb, %lu upozornení",
+   name,ok?@"FORMÁT OK":@"CHYBY",j[@"size"]?:@0,(unsigned long)errors.count,(unsigned long)warnings.count];
+  self.validationStatus.textColor=ok?[UIColor colorWithRed:.4 green:1 blue:.55 alpha:1]:[UIColor colorWithRed:1 green:.48 blue:.38 alpha:1];
+  NSMutableString *details=[NSMutableString stringWithFormat:@"%@ • %@\nVeľkosť: %@ B\nSHA-256: %@",
+   name,ok?@"Formálna kontrola OK":@"Kontrola neprešla",j[@"size"]?:@0,j[@"sha256"]?:@"neznáme"];
+  for(id item in errors)if([item isKindOfClass:NSString.class])[details appendFormat:@"\nCHYBA: %@",item];
+  for(id item in warnings)if([item isKindOfClass:NSString.class])[details appendFormat:@"\nPOZOR: %@",item];
+  [details appendString:@"\n\nTáto kontrola nezaručuje bezpečnosť G00, kolízie ani prijatie riadením Harrison."];
+  [self alert:details];
+ }];
+}
+- (void)prepareQueue {
+ if(![self isReady]||self.transferBusy)return;
+ if(!self.selected.length || self.dirty){[self alert:@"Vyber uložený program .600 bez neuložených zmien."];return;}
+ NSString *name=[self.selected copy];
+ [self request:@"GET" path:[@"/api/validate?name=" stringByAppendingString:[self encodedName]] body:nil done:^(NSDictionary *j,NSError *e){
+  if(e){[self failure:j error:e];return;}
+  NSDictionary *validation=[j[@"validation"] isKindOfClass:NSDictionary.class]?j[@"validation"]:nil;
+  if(![validation[@"valid"] boolValue]){
+   [self alert:@"Súbor neprešiel kontrolou formátu na Raspberry Pi. Do fronty ho nezaradím. Pozri KONTROLA G-KÓDU."];
+   return;
+  }
+  [self request:@"POST" path:@"/api/queue/stage" body:@{@"name":name} done:^(NSDictionary *q,NSError *err){
+   if(err){[self failure:q error:err];return;}
+   NSDictionary *queue=[q[@"queue"] isKindOfClass:NSDictionary.class]?q[@"queue"]:nil;
+   if(![queue[@"name"] isEqualToString:name]||[queue[@"sha256"] length]!=64){
+    [self alert:@"Fronta nepotvrdila názov a SHA-256 súboru."];return;
+   }
+   self.queuedName=name;self.queueStatus.text=[NSString stringWithFormat:@"FRONTA PRIPRAVENÁ • %@",name];
+   self.status.text=[NSString stringWithFormat:@"%@ pripravený; zatiaľ sa nič neodoslalo.",name];
+   [self fetchTransferStatus];
+  }];
+ }];
+}
+- (void)clearQueue {
+ if(![self isReady]||self.transferBusy)return;
+ UIAlertController *dialog=[UIAlertController alertControllerWithTitle:@"Vyprázdniť frontu?" message:@"Vyprázdni iba pripravený prenos. Súbory v knižnici ani v CNC nevymaže." preferredStyle:UIAlertControllerStyleAlert];
+ [dialog addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ [dialog addAction:[UIAlertAction actionWithTitle:@"VYPRÁZDNIŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+  [self request:@"POST" path:@"/api/queue/clear" body:@{} done:^(NSDictionary *j,NSError *e){
+   if(e){[self failure:j error:e];return;}
+   self.queuedName=nil;[self fetchTransferStatus];
+  }];
+ }]];
+ [self presentViewController:dialog animated:YES completion:nil];
+}
+- (void)sendQueued {
+ if(![self isReady]||self.transferBusy)return;
+ if(!self.queuedName.length){[self alert:@"Najprv priprav program .600 do fronty."];return;}
+ NSString *name=[self.queuedName copy];
+ UIAlertController *d=[UIAlertController alertControllerWithTitle:@"Odoslať do Alpha 400?"
+  message:[NSString stringWithFormat:@"Fronta: %@\nNa CNC nastav LOAD CAM FILE. Skontroluj program, korekcie a bezpečné pohyby nástroja. Sériový zápis NIE JE potvrdenie prijatia CNC.",name] preferredStyle:UIAlertControllerStyleAlert];
+ [d addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ [d addAction:[UIAlertAction actionWithTitle:@"ODOSLAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+  [self request:@"POST" path:@"/api/send" body:@{@"name":name,@"force":@NO} done:^(NSDictionary *j,NSError *e){
+   if(e){[self failure:j error:e];return;}
+   if(![j[@"started"] boolValue]){[self alert:@"Server nepotvrdil spustenie."];return;}
+   self.status.text=[NSString stringWithFormat:@"Prenos %@ bol spustený na Raspberry Pi",name];
+   [self pollJob];
+  }];
+ }]];
+ [self presentViewController:d animated:YES completion:nil];
+}
+
 - (void)openSelected {
  if(![self isReady])return;
  if(!self.selected.length){[self alert:@"Najprv vyber program zo zoznamu."];return;}
@@ -481,6 +725,7 @@
    NSDictionary *body=(mode==2?nil:@{@"name":a.textFields.firstObject.text?:@""});
    [self request:@"POST" path:path body:body done:^(NSDictionary *j,NSError *e) {
      if(e || (mode==1 && ![j[@"ok"] boolValue])){[self failure:j error:e];return;}
+     if(mode==2 && ![j[@"started"] boolValue]){[self alert:@"Príjem zo stroja sa nepodarilo spustiť."];return;}
      self.status.text=@"Čakám na program zo stroja";
      [self pollJob];
    }];
@@ -498,8 +743,9 @@
 - (void)pollJob {
  if(![self isReady])return;
  NSInteger mode=self.machineMode;
- [self request:@"GET" path:(mode==2?@"/api/status":@"/api/job") body:nil done:^(NSDictionary *j,NSError *e){
-  if(e || ![j isKindOfClass:NSDictionary.class]){[self failure:j error:e];return;}
+ [self request:@"GET" path:(mode==2?@"/api/transfer/status":@"/api/job") body:nil done:^(NSDictionary *j,NSError *e){
+  if(e || ![j isKindOfClass:NSDictionary.class]){[self setPiOnline:NO];[self failure:j error:e];return;}
+  if(mode==2)[self setPiOnline:YES];
   NSDictionary *job=(mode==2?j[@"transfer"]:j[@"job"]);
   if(![job isKindOfClass:NSDictionary.class]){self.status.text=@"Server nevrátil stav prenosu.";return;}
   NSString *message=[job[@"message"] isKindOfClass:NSString.class]?job[@"message"]:@"";
@@ -511,6 +757,7 @@
    active=[@[@"running",@"pending",@"waiting",@"receiving",@"sending"] containsObject:state.lowercaseString];
   }
   self.status.text=[NSString stringWithFormat:@"%@ • %@%% • %@",mode==2?@"ALPHALINK":@"NUM 1040",progress,message];
+  if(mode==2)[self updateTransferPanel:job queue:j[@"queue"]];
   if(active)dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(1*NSEC_PER_SEC)),dispatch_get_main_queue(),^{if(self.machineMode==mode)[self pollJob];});
   else {
    if(mode==2 && [job[@"finished"] length] && ![job[@"ok"] boolValue]) {
