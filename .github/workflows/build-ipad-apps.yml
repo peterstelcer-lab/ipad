@@ -68,7 +68,7 @@ jobs:
           cat > build/AlphaLink/DEBIAN/control <<'EOF'
           Package: sk.alphalink.camipad
           Name: AlphaLink CAM iPad
-          Version: 1.8.1-1
+          Version: 1.9.0-1
           Architecture: iphoneos-arm
           Maintainer: AlphaLink
           Section: Applications
@@ -101,14 +101,14 @@ jobs:
           chmod 755 build/AlphaLink/Applications/AlphaLinkiPad.app/AlphaLinkiPad
           chmod 755 build/NUM1040/Applications/NUM1040Transfer.app/NUM1040Transfer
           chmod 755 build/YouTube/Applications/YouTubeWebiPad.app/YouTubeWebiPad
-          dpkg-deb --build --root-owner-group build/AlphaLink output/AlphaLink_CAM_iPad_V1_8_1.deb
+          dpkg-deb --build --root-owner-group build/AlphaLink output/AlphaLink_CAM_iPad_V1_9.deb
           dpkg-deb --build --root-owner-group build/NUM1040 output/NUM1040_Transfer_iPad_V1_1.deb
           dpkg-deb --build --root-owner-group build/YouTube output/YouTube_Web_iPad_V1_1.deb
           for pkg in output/*.deb;do dpkg-deb --info "$pkg";done
       - uses: actions/upload-artifact@v4
         with:
-          name: AlphaLink_CAM_iPad_V1_8_1_DEB
-          path: output/AlphaLink_CAM_iPad_V1_8_1.deb
+          name: AlphaLink_CAM_iPad_V1_9_DEB
+          path: output/AlphaLink_CAM_iPad_V1_9.deb
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
