@@ -12,7 +12,7 @@ jobs:
     runs-on: macos-15-intel
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - name: Compile and sign Media Player V5 with MobileVLCKit
         shell: bash
         run: |
@@ -37,7 +37,7 @@ jobs:
           lipo -info stage/Applications/Media.app/Media
           brew install ldid
           ldid -SNewUtilities/entitlements.plist stage/Applications/Media.app/Media
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v4
         with:
           name: nebula-media-v5-stage
           path: stage/
@@ -46,7 +46,7 @@ jobs:
     needs: compile
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v4
         with:
           name: nebula-media-v5-stage
           path: stage
@@ -74,7 +74,7 @@ jobs:
           chmod 755 stage/DEBIAN/postinst stage/Applications/Media.app/Media
           dpkg-deb --build --root-owner-group stage output/Nebula_Media_iPad_V5.deb
           dpkg-deb --info output/Nebula_Media_iPad_V5.deb
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v4
         with:
           name: Nebula_Media_iPad_V5_DEB
           path: output/Nebula_Media_iPad_V5.deb
