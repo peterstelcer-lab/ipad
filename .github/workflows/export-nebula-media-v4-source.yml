@@ -1,0 +1,54 @@
+name: Export Nebula Media Player V4 source archive
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/export-nebula-media-v4-source.yml'
+jobs:
+  export-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch exact verified V4 sources
+        uses: actions/checkout@v4
+        with:
+          ref: 6622354019b1e888f643bb425d2691c73a24c790
+      - name: Archive Objective-C source and packaging instructions
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="Nebula_Media_Player_V4_SOURCE"
+          mkdir -p "$root/App" "$root/GitHub_Actions" "$root/Icon_Assets"
+          cp NewUtilities/NebulaMedia.m "$root/App/NebulaMedia.m"
+          cp NewUtilities/Shared.h "$root/App/Shared.h"
+          cp NewUtilities/Media.plist "$root/App/Info.plist"
+          cp NewUtilities/entitlements.plist "$root/App/entitlements.plist"
+          cp .github/workflows/build-nebula-media-v4.yml "$root/GitHub_Actions/build-nebula-media-v4.yml"
+          cat > "$root/README_SK.md" <<'README'
+          # Nebula Media Player V4 — úplný zdrojový projekt
+
+          Toto je presná verzia V4 použitého projektu, z ktorého sa skladal balík `Nebula_Media_iPad_V4.deb`. Zdrojový stav: GitHub commit `6622354019b1e888f643bb425d2691c73a24c790`.
+
+          ## Obsah
+          - `App/NebulaMedia.m` — celá implementácia obrazoviek, ovládania a VLC prehrávania (Objective-C).
+          - `App/Shared.h` — pomocné funkcie UIKit, farby a vytváranie komponentov.
+          - `App/Info.plist` — identifikátor aplikácie, verzia a podpora iOS 12.
+          - `App/entitlements.plist` — práva pre rootful jailbreak prostredie.
+          - `GitHub_Actions/build-nebula-media-v4.yml` — presný cloudový build, ktorý si sám stiahne MobileVLCKit 3.6.0 a vytvorí podpísaný rootful `.deb`.
+
+          ## Kompilácia
+          Potrebný je Apple iPhoneOS SDK a `MobileVLCKit 3.6.0`. Najjednoduchší je priložený workflow v GitHub Actions na macOS runneri. Bez tejto externéj knižnice sa prehrávač nedá samostatne skompilovať. Zdrojový kód MobileVLCKit sa do archívu nepribaľuje, pretože je projektom tretej strany (VideoLAN).
+
+          ## Ikony
+          Schválené grafické ikony sa nachádzajú v priečinku `Icon_Assets` v kompletnom archíve pripravenom pre používateľa. Pred balením do aplikácie treba skopírovať ikony s názvami `AppIcon76.png`, `AppIcon76@2x.png`, `AppIcon83.5@2x.png` do `Media.app`. Samotný workflow z tohto historického commitu ikony neskopíruje — pri opätovnom zostavení ho treba doplniť.
+
+          ## Technické upozornenie
+          Projekt je určený pre jailbreaknutý iPad s iOS 12 a architektúrou arm64. V4 nie je automaticky kompatibilná s rootless jailbreakom iPad mini 4 na iPadOS 15, ktorý vyžaduje upravené umiestnenie balíka. Pokročilé rýchlosti môžu presahovať výkon zariadenia.
+          README
+          mkdir -p output
+          zip -qr output/Nebula_Media_Player_V4_SOURCE.zip "$root"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nebula_Media_Player_V4_SOURCE
+          path: output/Nebula_Media_Player_V4_SOURCE.zip
+          retention-days: 7
