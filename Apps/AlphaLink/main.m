@@ -383,6 +383,12 @@
 }
 
 
+- (void)setPiOnline:(BOOL)online {
+ self.piLight.text=online?@"● PI PRIPOJENÉ":@"● PI ODPOJENÉ";
+ self.piLight.textColor=online?[UIColor colorWithRed:.25 green:1 blue:.53 alpha:1]:[UIColor colorWithRed:1 green:.47 blue:.35 alpha:1];
+ self.machineLight.text=@"● CNC PRÍJEM NEOVERENÝ";
+ self.machineLight.textColor=[UIColor colorWithRed:1 green:.74 blue:.29 alpha:1];
+}
 - (void)updateConnectionPanel:(NSDictionary *)statusInfo {
  [self setPiOnline:self.machineMode==2];
  NSString *profile=[statusInfo[@"profile"] isKindOfClass:NSString.class]?statusInfo[@"profile"]:@"9600 / EVEN / 7 / 2 / XON-XOFF / CAM RAW";
