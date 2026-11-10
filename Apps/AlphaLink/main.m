@@ -4,7 +4,7 @@
 - (instancetype)initWithBaseURL:(NSString *)baseURL;
 @end
 
-@interface CNCController : UIViewController <UITableViewDataSource,UITableViewDelegate,UITextViewDelegate>
+@interface CNCController : UIViewController <UITableViewDataSource,UITableViewDelegate,UITextViewDelegate,UIDocumentPickerDelegate>
 @property(nonatomic,strong) UITextField *address;
 @property(nonatomic,strong) UILabel *status;
 @property(nonatomic,strong) UITableView *table;
@@ -16,6 +16,17 @@
 @property(nonatomic,assign) NSInteger machineMode; // 0=offline, 1=NUM1040, 2=AlphaLink
 @property(nonatomic,copy) NSString *connectedBase;
 @property(nonatomic,copy) NSString *editorOriginal;
+@property(nonatomic,strong) UIView *programPage,*libraryPanel,*transferPanel,*settingsPage;
+@property(nonatomic,strong) UILabel *headerTitle,*piLight,*machineLight,*libraryTitle,*queueStatus,*selectedStatus,*progressStatus,*profileStatus,*transferStatus,*validationStatus,*transferTitle,*libraryHint;
+@property(nonatomic,strong) UIProgressView *progressBar;
+@property(nonatomic,strong) NSArray *navButtons,*libraryActions,*transferActions;
+@property(nonatomic,strong) UIButton *queueClearButton,*uploadButton;
+@property(nonatomic,strong) NSMutableArray *projects,*isoFiles;
+@property(nonatomic,copy) NSString *queuedName;
+@property(nonatomic,assign) NSInteger pageIndex;
+@property(nonatomic,assign) BOOL transferBusy;
+@property(nonatomic,assign) NSUInteger activeRequestSerial;
+
 @end
 
 @implementation CNCController
@@ -25,45 +36,208 @@
 - (UIButton *)button:(NSString *)name action:(SEL)sel {
  UIButton *b=[UIButton buttonWithType:UIButtonTypeSystem]; [b setTitle:name forState:UIControlStateNormal]; b.backgroundColor=self.panel; [b setTitleColor:self.cyan forState:UIControlStateNormal]; b.layer.cornerRadius=9; b.titleLabel.font=[UIFont boldSystemFontOfSize:16]; [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside]; return b;
 }
-- (void)viewDidLoad { [super viewDidLoad]; self.view.backgroundColor=self.bg; self.files=[NSMutableArray array]; self.machineMode=0;
- UILabel *title=[UILabel new]; title.text=@"AlphaLink CAM • iPad V1.6"; title.textColor=self.cyan; title.font=[UIFont boldSystemFontOfSize:23]; title.frame=CGRectMake(16,22,500,30); [self.view addSubview:title];
- self.address=[[UITextField alloc] initWithFrame:CGRectZero]; self.address.textColor=[UIColor whiteColor]; self.address.backgroundColor=self.panel; self.address.layer.cornerRadius=8; self.address.font=[UIFont systemFontOfSize:17]; self.address.autocapitalizationType=UITextAutocapitalizationTypeNone; self.address.autocorrectionType=UITextAutocorrectionTypeNo; self.address.keyboardType=UIKeyboardTypeURL;
- self.address.text=[[NSUserDefaults standardUserDefaults] stringForKey:@"alphalink-url"]?:@"http://alphalink.local:8081"; [self.view addSubview:self.address];
- UIButton *connect=[self button:@"PRIPOJIŤ" action:@selector(checkConnection)]; connect.tag=11; [self.view addSubview:connect];
- self.status=[UILabel new]; self.status.text=@"Odpojené • pripravené na skúšku"; self.status.font=[UIFont systemFontOfSize:15]; self.status.textColor=[UIColor colorWithWhite:.8 alpha:1]; self.status.numberOfLines=3; [self.view addSubview:self.status];
- self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"PROGRAMY",@"G-KÓD",@"OPERÁCIE + 2D"]]; self.tabs.selectedSegmentIndex=0; [self.tabs setTitleTextAttributes:@{NSFontAttributeName:[UIFont boldSystemFontOfSize:16]} forState:UIControlStateNormal]; [self.tabs addTarget:self action:@selector(updateTabs) forControlEvents:UIControlEventValueChanged]; [self.view addSubview:self.tabs];
- self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain]; self.table.backgroundColor=self.bg; self.table.dataSource=self; self.table.delegate=self; self.table.rowHeight=62; self.table.separatorColor=self.panel; [self.view addSubview:self.table];
- self.editor=[[UITextView alloc] initWithFrame:CGRectZero]; self.editor.backgroundColor=[UIColor colorWithRed:.015 green:.04 blue:.055 alpha:1]; self.editor.textColor=[UIColor whiteColor]; self.editor.font=[UIFont fontWithName:@"Menlo" size:18]?:[UIFont monospacedDigitSystemFontOfSize:18 weight:UIFontWeightRegular]; self.editor.autocapitalizationType=UITextAutocapitalizationTypeNone; self.editor.autocorrectionType=UITextAutocorrectionTypeNo; self.editor.delegate=self; [self.view addSubview:self.editor];
- NSArray *labels=@[@"OBNOVIŤ",@"OTVORIŤ",@"ULOŽIŤ",@"DO NUM",@"Z NUM",@"STOP"];
- NSArray *sels=@[NSStringFromSelector(@selector(refreshFiles)),NSStringFromSelector(@selector(openSelected)),NSStringFromSelector(@selector(saveEditor)),NSStringFromSelector(@selector(sendSelected)),NSStringFromSelector(@selector(receiveProgram)),NSStringFromSelector(@selector(stopTransfer))];
- for (NSInteger i=0;i<labels.count;i++){ UIButton *b=[self button:labels[i] action:NSSelectorFromString(sels[i])]; b.tag=100+i; [self.view addSubview:b]; }
- [self updateTabs]; [self layoutContent];
+- (UILabel *)dashboardLabel:(NSString *)text size:(CGFloat)font color:(UIColor *)color {
+ UILabel *l=[UILabel new];l.text=text;l.font=[UIFont systemFontOfSize:font];l.textColor=color;
+ l.adjustsFontSizeToFitWidth=YES;l.minimumScaleFactor=.65;l.numberOfLines=2;return l;
 }
+- (void)decoratePanel:(UIView *)view {
+ view.backgroundColor=[UIColor colorWithRed:.025 green:.105 blue:.14 alpha:1];
+ view.layer.cornerRadius=10;view.layer.borderColor=[[self cyan] colorWithAlphaComponent:.52].CGColor;
+ view.layer.borderWidth=1.0;
+}
+- (UIButton *)dashboardButton:(NSString *)text action:(SEL)method tint:(UIColor *)tint {
+ UIButton *b=[self button:text action:method];
+ b.titleLabel.font=[UIFont boldSystemFontOfSize:15];
+ b.titleLabel.adjustsFontSizeToFitWidth=YES;
+ b.titleLabel.minimumScaleFactor=.65;b.layer.cornerRadius=7;b.layer.borderWidth=1;
+ if(tint){b.backgroundColor=[tint colorWithAlphaComponent:.28];b.layer.borderColor=[tint colorWithAlphaComponent:.8].CGColor;
+ [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];}
+ else {b.backgroundColor=[UIColor colorWithRed:.035 green:.18 blue:.23 alpha:1];b.layer.borderColor=[[self cyan] colorWithAlphaComponent:.48].CGColor;}
+ return b;
+}
+- (void)viewDidLoad {
+ [super viewDidLoad];
+ self.view.backgroundColor=self.bg;self.files=[NSMutableArray array];self.projects=[NSMutableArray array];self.isoFiles=[NSMutableArray array];
+ self.machineMode=0;self.pageIndex=2;self.transferBusy=NO;
+ self.headerTitle=[self dashboardLabel:@"ALPHALINK CAM V1.7" size:22 color:UIColor.whiteColor];
+ self.headerTitle.font=[UIFont boldSystemFontOfSize:22];[self.view addSubview:self.headerTitle];
+ self.piLight=[self dashboardLabel:@"● PI ODPOJENÉ" size:14 color:[UIColor colorWithRed:1 green:.58 blue:.30 alpha:1]];
+ self.piLight.textAlignment=NSTextAlignmentCenter;[self.view addSubview:self.piLight];
+ self.machineLight=[self dashboardLabel:@"● CNC NEOVERENÉ" size:13 color:[UIColor colorWithRed:1 green:.70 blue:.32 alpha:1]];
+ self.machineLight.textAlignment=NSTextAlignmentRight;[self.view addSubview:self.machineLight];
+ self.status=[self dashboardLabel:@"Pripravené • pripoj Raspberry Pi" size:13 color:[UIColor colorWithWhite:.80 alpha:1]];
+ self.status.textAlignment=NSTextAlignmentCenter;[self.view addSubview:self.status];
+ NSArray *titles=@[@"01 EDITÁCIA",@"02 G-KÓD + PRÍKAZY",@"03 PRENOS / KNIŽNICA",@"04 NASTAVENIA"];
+ NSMutableArray *nav=[NSMutableArray array];
+ for(NSInteger i=0;i<titles.count;i++){UIButton *b=[self dashboardButton:titles[i] action:@selector(navigate:) tint:nil];
+ b.tag=810+i;[self.view addSubview:b];[nav addObject:b];}self.navButtons=nav;
+ // Kept as internal selection state for the existing editor API.
+ self.tabs=[[UISegmentedControl alloc] initWithItems:@[@"PROGRAMY",@"G-KÓD",@"OPERÁCIE"]];
+ self.tabs.selectedSegmentIndex=0;
+ self.programPage=[UIView new];[self.view addSubview:self.programPage];
+ self.libraryPanel=[UIView new];[self decoratePanel:self.libraryPanel];[self.programPage addSubview:self.libraryPanel];
+ self.transferPanel=[UIView new];[self decoratePanel:self.transferPanel];[self.programPage addSubview:self.transferPanel];
+ self.libraryTitle=[self dashboardLabel:@"▣  KNIŽNICA RASPBERRY PI" size:19 color:self.cyan];
+ self.libraryTitle.font=[UIFont boldSystemFontOfSize:19];[self.libraryPanel addSubview:self.libraryTitle];
+ self.libraryHint=[self dashboardLabel:@"Výber .600 pre prenos do Alpha 400 • Návrhy .hbj a ISO .nc sa neposielajú v režime CAM." size:12 color:[UIColor colorWithWhite:.74 alpha:1]];
+ [self.libraryPanel addSubview:self.libraryHint];
+ self.uploadButton=[self dashboardButton:@"⇧  NAHRAŤ .600 DO PI" action:@selector(uploadToPi) tint:self.cyan];[self.libraryPanel addSubview:self.uploadButton];
+ self.table=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
+ self.table.backgroundColor=[UIColor colorWithRed:.015 green:.067 blue:.089 alpha:1];self.table.dataSource=self;self.table.delegate=self;
+ self.table.rowHeight=43;self.table.sectionHeaderHeight=28;
+ self.table.separatorColor=[UIColor colorWithRed:.09 green:.28 blue:.33 alpha:1];
+ [self.libraryPanel addSubview:self.table];
+ self.queueStatus=[self dashboardLabel:@"FRONTA NA ODOSLANIE • prázdna" size:15 color:self.cyan];
+ [self.libraryPanel addSubview:self.queueStatus];
+ self.queueClearButton=[self dashboardButton:@"VYPRÁZDNIŤ" action:@selector(clearQueue) tint:nil];
+ [self.libraryPanel addSubview:self.queueClearButton];
+ self.selectedStatus=[self dashboardLabel:@"Vybraný program: žiadny" size:15 color:UIColor.whiteColor];[self.libraryPanel addSubview:self.selectedStatus];
+ self.progressBar=[[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
+ self.progressBar.progressTintColor=[UIColor colorWithRed:.04 green:.93 blue:.40 alpha:1];
+ self.progressBar.trackTintColor=[UIColor colorWithRed:.11 green:.26 blue:.31 alpha:1];
+ self.progressBar.progress=0;[self.libraryPanel addSubview:self.progressBar];
+ self.progressStatus=[self dashboardLabel:@"0 / 0 B • 0 % • neprebieha prenos" size:13 color:self.cyan];
+ self.progressStatus.textAlignment=NSTextAlignmentCenter;[self.libraryPanel addSubview:self.progressStatus];
+ NSArray *actions=@[@"PRIPRAVIŤ DO FRONTY",@"ODOSLAŤ DO ALPHA 400",@"OTVORIŤ / UPRAVIŤ",@"ZMAZAŤ Z RASPBERRY PI",@"KONTROLA G-KÓDU",@"OBNOVIŤ KNIŽNICU"];
+ NSArray *sels=@[@"prepareQueue",@"sendSelected",@"openSelected",@"deleteFromPi",@"validateSelected",@"refreshFiles"];
+ NSMutableArray *leftButtons=[NSMutableArray array];
+ for(NSInteger i=0;i<actions.count;i++){
+ UIColor *tint=i==1?self.cyan:(i==2?[UIColor colorWithRed:.08 green:.77 blue:.37 alpha:1]:(i==3?[UIColor colorWithRed:.91 green:.19 blue:.29 alpha:1]:nil));
+ UIButton *b=[self dashboardButton:actions[i] action:NSSelectorFromString(sels[i]) tint:tint];
+ [self.libraryPanel addSubview:b];[leftButtons addObject:b];
+ }self.libraryActions=leftButtons;
+ self.transferTitle=[self dashboardLabel:@"⇄  ODOSIELANIE / PRÍJEM ALPHA 400" size:18 color:self.cyan];
+ self.transferTitle.font=[UIFont boldSystemFontOfSize:18];[self.transferPanel addSubview:self.transferTitle];
+ self.profileStatus=[self dashboardLabel:@"Profil: 9600 / 7E2 / XON-XOFF / RAW .600" size:14 color:UIColor.whiteColor];
+ [self.transferPanel addSubview:self.profileStatus];
+ NSArray *rightLabels=@[@"▷  ODOSLAŤ PROGRAM Z FRONTY",@"⇩  ČAKAŤ NA PRÍJEM ZO STROJA",@"■  STOP PRENOS / PRÍJEM"];
+ NSArray *rightSels=@[@"sendQueued",@"receiveProgram",@"stopTransfer"];
+ NSMutableArray *rightButtons=[NSMutableArray array];
+ for(NSInteger i=0;i<rightLabels.count;i++){
+ UIColor *c=i==1?[UIColor colorWithRed:.04 green:.73 blue:.35 alpha:1]:(i==2?[UIColor colorWithRed:.88 green:.16 blue:.23 alpha:1]:self.cyan);
+ UIButton *b=[self dashboardButton:rightLabels[i] action:NSSelectorFromString(rightSels[i]) tint:c];
+ [self.transferPanel addSubview:b];[rightButtons addObject:b];
+ }self.transferActions=rightButtons;
+ self.transferStatus=[self dashboardLabel:@"Server sa ešte nekontroloval." size:14 color:UIColor.whiteColor];
+ [self.transferPanel addSubview:self.transferStatus];
+ self.validationStatus=[self dashboardLabel:@"KONTROLA: vyber program .600 a stlač KONTROLA G-KÓDU." size:14 color:self.cyan];
+ [self.transferPanel addSubview:self.validationStatus];
+ UILabel *warning=[self dashboardLabel:@"● RS-232 pripravenosť neurčuje, či CNC program prijalo. Potvrdenie príjmu zo stroja nie je dostupné." size:13 color:[UIColor colorWithRed:1 green:.75 blue:.39 alpha:1]];
+ warning.tag=917;warning.numberOfLines=3;[self.transferPanel addSubview:warning];
+ UIButton *settingsShortcut=[self dashboardButton:@"NASTAVENIA →" action:@selector(showSettings) tint:nil];settingsShortcut.tag=918;[self.transferPanel addSubview:settingsShortcut];
+ self.editor=[[UITextView alloc] initWithFrame:CGRectZero];
+ self.editor.backgroundColor=[UIColor colorWithRed:.015 green:.04 blue:.055 alpha:1];
+ self.editor.textColor=UIColor.whiteColor;self.editor.font=[UIFont fontWithName:@"Menlo" size:18]?:[UIFont monospacedDigitSystemFontOfSize:18 weight:UIFontWeightRegular];
+ self.editor.autocorrectionType=UITextAutocorrectionTypeNo;self.editor.autocapitalizationType=UITextAutocapitalizationTypeNone;
+ self.editor.delegate=self;[self.view addSubview:self.editor];
+ self.settingsPage=[UIView new];[self.view addSubview:self.settingsPage];
+ UILabel *settingsTitle=[self dashboardLabel:@"NASTAVENIA ALPHALINK • RASPBERRY PI V34" size:20 color:self.cyan];
+ settingsTitle.tag=903;[self.settingsPage addSubview:settingsTitle];
+ UILabel *settingsHint=[self dashboardLabel:@"Adresa servera • prenos prebieha na Raspberry Pi. Zariadenie CNC nedáva spätné potvrdenie o prijatí programu." size:16 color:UIColor.whiteColor];
+ settingsHint.tag=904;[self.settingsPage addSubview:settingsHint];
+ self.address=[[UITextField alloc] initWithFrame:CGRectZero];
+ self.address.textColor=UIColor.whiteColor;self.address.backgroundColor=self.panel;self.address.layer.cornerRadius=8;
+ self.address.font=[UIFont systemFontOfSize:18];self.address.autocapitalizationType=UITextAutocapitalizationTypeNone;
+ self.address.autocorrectionType=UITextAutocorrectionTypeNo;self.address.keyboardType=UIKeyboardTypeURL;
+ self.address.text=[[NSUserDefaults standardUserDefaults] stringForKey:@"alphalink-url"]?:@"http://alphalink.local:8081";
+ [self.settingsPage addSubview:self.address];
+ UIButton *connect=[self dashboardButton:@"PRIPOJIŤ / OBNOVIŤ" action:@selector(checkConnection) tint:self.cyan];
+ connect.tag=11;[self.settingsPage addSubview:connect];
+ UIButton *back=[self dashboardButton:@"← SPÄŤ NA PROGRAMY" action:@selector(showPrograms) tint:nil];
+ back.tag=905;[self.settingsPage addSubview:back];
+ [self showPrograms];
+ [self checkConnection];
+}
+
 - (void)viewDidLayoutSubviews { [super viewDidLayoutSubviews]; [self layoutContent]; }
 - (void)layoutContent {
- CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height;
- CGFloat top= self.view.safeAreaInsets.top; CGFloat bottom=self.view.safeAreaInsets.bottom;
- UIView *conn=[self.view viewWithTag:11]; self.address.frame=CGRectMake(16,top+58,w-156,42); conn.frame=CGRectMake(w-132,top+58,116,42);
- self.status.frame=CGRectMake(16,top+106,w-32,56); self.tabs.frame=CGRectMake(16,top+168,w-32,38);
- CGFloat footer=h-bottom-65, space=(w-32-5*8)/6.0;
- for (NSInteger i=0;i<6;i++){ UIView *b=[self.view viewWithTag:100+i]; b.frame=CGRectMake(16+i*(space+8),footer,space,50); }
- CGRect content=CGRectMake(16,top+213,w-32,MAX(100,footer-(top+221)));
- self.table.frame=content; self.editor.frame=content;
+ CGFloat w=self.view.bounds.size.width,h=self.view.bounds.size.height,top=self.view.safeAreaInsets.top,bottom=self.view.safeAreaInsets.bottom;
+ self.headerTitle.frame=CGRectMake(15,top+5,MIN(275,w*.30),27);
+ self.piLight.frame=CGRectMake(w*.31,top+6,MIN(180,w*.19),26);
+ self.machineLight.frame=CGRectMake(w*.56,top+6,w*.41,26);
+ self.status.frame=CGRectMake(14,top+34,w-28,21);
+ CGFloat navY=top+58,navGap=6,navWidth=(w-30-navGap*3)/4;
+ for(NSInteger i=0;i<self.navButtons.count;i++){
+  UIButton *btn=self.navButtons[i];btn.frame=CGRectMake(15+i*(navWidth+navGap),navY,navWidth,40);
+  BOOL active=self.pageIndex==i;
+  btn.backgroundColor=active?[UIColor colorWithRed:.025 green:.45 blue:.51 alpha:1]:self.panel;
+  btn.layer.borderColor=(active?self.cyan:[self cyan]).CGColor;
+  [btn setTitleColor:active?UIColor.whiteColor:self.cyan forState:UIControlStateNormal];
+ }
+ CGRect region=CGRectMake(14,navY+48,w-28,MAX(180,h-(navY+48)-bottom-7));
+ self.programPage.frame=region;self.editor.frame=region;self.settingsPage.frame=region;
+ CGFloat pw=region.size.width,ph=region.size.height,inter=11;
+ CGFloat leftW=MAX(350,pw*.575),rightW=pw-leftW-inter;
+ self.libraryPanel.frame=CGRectMake(0,0,leftW,ph);
+ self.transferPanel.frame=CGRectMake(leftW+inter,0,rightW,ph);
+ CGFloat m=10,innerW=leftW-2*m;
+ self.libraryTitle.frame=CGRectMake(m,7,innerW*.60,26);
+ self.uploadButton.frame=CGRectMake(leftW-179,6,169,31);
+ self.libraryHint.frame=CGRectMake(m,39,innerW,40);
+ CGFloat tableY=84,actionsRowH=38,actionsGap=6;
+ CGFloat tableH=MAX(130,ph-298);
+ self.table.frame=CGRectMake(m,tableY,innerW,tableH);
+ CGFloat queueY=tableY+tableH+5;
+ self.queueStatus.frame=CGRectMake(m,queueY,innerW-115,33);
+ self.queueClearButton.frame=CGRectMake(leftW-116,queueY+2,106,28);
+ self.selectedStatus.frame=CGRectMake(m,queueY+39,innerW,29);
+ self.progressBar.frame=CGRectMake(m+1,queueY+76,innerW-2,11);
+ self.progressStatus.frame=CGRectMake(m,queueY+91,innerW,20);
+ CGFloat buttonsY=queueY+117,cellW=(innerW-12)/3;
+ for(NSInteger i=0;i<self.libraryActions.count;i++){
+  NSInteger row=i/3,col=i%3;
+  UIButton *b=self.libraryActions[i];b.frame=CGRectMake(m+col*(cellW+6),buttonsY+row*(actionsRowH+actionsGap),cellW,actionsRowH);
+ }
+ CGFloat rW=rightW-2*m;
+ self.transferTitle.frame=CGRectMake(m,7,rW,30);
+ self.profileStatus.frame=CGRectMake(m,43,rW,39);
+ for(NSInteger i=0;i<self.transferActions.count;i++){
+  UIButton *b=self.transferActions[i];b.frame=CGRectMake(m,90+i*56,rW,47);
+ }
+ self.transferStatus.frame=CGRectMake(m,266,rW,65);
+ self.validationStatus.frame=CGRectMake(m,341,rW,MAX(62,MIN(112,ph*.17)));
+ UIView *warning=[self.transferPanel viewWithTag:917];
+ warning.frame=CGRectMake(m,462,rW,69);
+ UIView *settingsShortcut=[self.transferPanel viewWithTag:918];
+ settingsShortcut.frame=CGRectMake(MAX(m,rightW-166),MIN(ph-48,542),MIN(155,rW),37);
+ CGFloat settingsW=MIN(690,pw-36),sx=(pw-settingsW)*.5;
+ [self.settingsPage viewWithTag:903].frame=CGRectMake(sx,23,settingsW,40);
+ [self.settingsPage viewWithTag:904].frame=CGRectMake(sx,76,settingsW,71);
+ self.address.frame=CGRectMake(sx,160,settingsW-190,49);
+ [self.settingsPage viewWithTag:11].frame=CGRectMake(sx+settingsW-182,160,182,49);
+ [self.settingsPage viewWithTag:905].frame=CGRectMake(sx,235,settingsW,45);
 }
-- (void)updateTabs {
- if(self.tabs.selectedSegmentIndex==2) {
-  self.tabs.selectedSegmentIndex=0; self.table.hidden=NO; self.editor.hidden=YES;
+- (void)navigate:(UIButton *)sender {
+ NSInteger tab=sender.tag-810;
+ if(tab==0){self.pageIndex=0;self.tabs.selectedSegmentIndex=1;[self updateTabs];}
+ else if(tab==1){
   if(self.machineMode!=2 || ![self.connectedBase isEqualToString:[self base]]) {
-   [self alert:@"Editor obrábacích operácií je určený pre pripojený AlphaLink / Harrison Alpha 400. Najprv stlač PRIPOJIŤ a over server."];
-   return;
+   [self alert:@"Editor operácií vyžaduje pripojený AlphaLink V34."];return;
   }
   CNCTurningController *editor=[[CNCTurningController alloc] initWithBaseURL:[self base]];
   editor.modalPresentationStyle=UIModalPresentationFullScreen;
   [self presentViewController:editor animated:YES completion:nil];
   return;
- }
- BOOL e=self.tabs.selectedSegmentIndex==1; self.table.hidden=e; self.editor.hidden=!e;
+ } else if(tab==2){[self showPrograms];}
+ else {[self showSettings];}
+ [self layoutContent];
 }
+- (void)showPrograms {
+ self.pageIndex=2;self.tabs.selectedSegmentIndex=0;[self updateTabs];
+}
+- (void)showSettings {
+ self.pageIndex=3;self.programPage.hidden=YES;self.editor.hidden=YES;self.settingsPage.hidden=NO;[self layoutContent];
+}
+- (void)updateTabs {
+ if(self.tabs.selectedSegmentIndex==2){
+  self.tabs.selectedSegmentIndex=0;[self showPrograms];return;
+ }
+ BOOL edit=self.tabs.selectedSegmentIndex==1;
+ self.pageIndex=edit?0:2;
+ self.programPage.hidden=edit;self.editor.hidden=!edit;self.settingsPage.hidden=YES;
+ [self layoutContent];
+}
+
 - (void)alert:(NSString *)message { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"CNC MyLink" message:message preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]]; [self presentViewController:a animated:YES completion:nil]; }
 - (NSString *)base { NSString *v=[self.address.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; if(v.length && [v rangeOfString:@"://"].location==NSNotFound) v=[@"http://" stringByAppendingString:v]; while([v hasSuffix:@"/"])v=[v substringToIndex:v.length-1]; return v; }
 - (void)request:(NSString *)method path:(NSString *)path body:(NSDictionary *)body done:(void (^)(NSDictionary *,NSError *))done {
