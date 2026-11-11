@@ -598,6 +598,8 @@
  NSRegularExpression *header=[NSRegularExpression regularExpressionWithPattern:@"^O[0-9]{4}$" options:0 error:nil];
  NSString *number=lines[0];
  if([header numberOfMatchesInString:number options:0 range:NSMakeRange(0,number.length)]!=1)return @"Chýba platná hlavička O0001 (O + 4 číslice).";
+ // For the first on-machine test, keep the exact user-proven single-program CAM O0001 flow.
+ if(![number isEqualToString:@"O0001"])return @"Skúšobný CAM prenos povoľuje iba už odskúšané číslo O0001. Nejde o kontrolu duplicity v pamäti CNC.";
  if(![lines[1] isEqualToString:@"(AZ PS)"])return @"Chýba presná CAM hlavička (AZ PS).";
  if(![lines[lines.count-2] isEqualToString:@"M16"] || ![lines.lastObject isEqualToString:@"%"])return @"Na konci musí byť presne M16 a %.";
  NSInteger m16=0,pct=0;
@@ -692,7 +694,7 @@
 - (void)confirmAndSendCAM:(NSString *)name digest:(NSString *)digest number:(NSString *)number {
  if(![self isReady]||self.transferBusy)return;
  NSString *msg=[NSString stringWithFormat:
-  @"Program: %@ (%@)\nSHA-256 overené.\n\nNa Harrison Alpha 400:\n1. Over, že %@ NIE JE v pamäti stroja.\n2. Over voľné miesto a zálohuj uložené programy.\n3. Zvoľ CAM → LOAD CAM FILE (nie ISO READ).\n4. Stroj nesmie obrábať. Odoslanie NEPOTVRDZUJE prijatie CNC.\n\nPotvrď iba po fyzickej kontrole na stroji.",name,number,number];
+  @"Program: %@ (%@)\nSHA-256 overené.\n\nRežim CAM podľa tvojho testu automaticky nahrádza predchádzajúci O0001.\n\nNa Harrison Alpha 400:\n1. Zvoľ CAM → LOAD CAM FILE (nie ISO READ).\n2. Zálohuj dôležité programy a skontroluj, že stroj nie je v cykle.\n3. Skontroluj, že riadenie je pripravené na prijímanie.\n\nSériový zápis nie je potvrdením prijatia CNC. Potvrď až po kontrole stroja.",name,number];
  UIAlertController *a=[UIAlertController alertControllerWithTitle:@"POSLEDNÁ KONTROLA PRED CNC" message:msg preferredStyle:UIAlertControllerStyleAlert];
  [a addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
  [a addAction:[UIAlertAction actionWithTitle:@"SKONTROLOVANÉ – ODOSLAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *act){
