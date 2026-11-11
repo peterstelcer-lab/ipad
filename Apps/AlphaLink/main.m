@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <CommonCrypto/CommonDigest.h>
+#import <math.h>
 
 @interface CNCTurningController : UIViewController
 - (instancetype)initWithBaseURL:(NSString *)baseURL;
@@ -497,24 +498,21 @@
  [self presentViewController:dialog animated:YES completion:nil];
 }
 - (void)validateSelected {
- if(![self isReady] || !self.selected.length){[self alert:@"Vyber program .600 na kontrolu."];return;}
+ if(![self isReady] || !self.selected.length){[self alert:@"Najprv vyber program .600 v knižnici."];return;}
  NSString *name=[self.selected copy];
- [self request:@"GET" path:[@"/api/file?name=" stringByAppendingString:[self encodedName]] body:nil done:^(NSDictionary *j,NSError *e){
-  if(e){[self failure:j error:e];return;}
-  NSDictionary *v=[j[@"validation"] isKindOfClass:NSDictionary.class]?j[@"validation"]:nil;
-  if(!v){[self alert:@"Server nevrátil kontrolu programu."];return;}
-  BOOL ok=[v[@"valid"] boolValue];
-  NSArray *errors=[v[@"errors"] isKindOfClass:NSArray.class]?v[@"errors"]:@[];
-  NSArray *warnings=[v[@"warnings"] isKindOfClass:NSArray.class]?v[@"warnings"]:@[];
-  self.validationStatus.text=[NSString stringWithFormat:@"KONTROLA %@: %@ • %@ B\n%lu chýb, %lu upozornení",
-   name,ok?@"FORMÁT OK":@"CHYBY",j[@"size"]?:@0,(unsigned long)errors.count,(unsigned long)warnings.count];
-  self.validationStatus.textColor=ok?[UIColor colorWithRed:.4 green:1 blue:.55 alpha:1]:[UIColor colorWithRed:1 green:.48 blue:.38 alpha:1];
-  NSMutableString *details=[NSMutableString stringWithFormat:@"%@ • %@\nVeľkosť: %@ B\nSHA-256: %@",
-   name,ok?@"Formálna kontrola OK":@"Kontrola neprešla",j[@"size"]?:@0,j[@"sha256"]?:@"neznáme"];
-  for(id item in errors)if([item isKindOfClass:NSString.class])[details appendFormat:@"\nCHYBA: %@",item];
-  for(id item in warnings)if([item isKindOfClass:NSString.class])[details appendFormat:@"\nPOZOR: %@",item];
-  [details appendString:@"\n\nTáto kontrola nezaručuje bezpečnosť G00, kolízie ani prijatie riadením Harrison."];
-  [self alert:details];
+ self.validationStatus.text=@"Prebieha hĺbková kontrola RAW .600...";
+ [self preflightCAM:name done:^(NSString *digest,NSString *number,NSString *error){
+  if(error){
+   self.validationStatus.text=[NSString stringWithFormat:@"ZABLOKOVANÉ: %@",error];
+   self.validationStatus.textColor=UIColor.redColor;
+   [self alert:[NSString stringWithFormat:@"Súbor %@ nespĺňa kontrolný profil pre skúšobný prenos.\n\n%@\n\nDo CNC sa nič neodoslalo.",name,error]];
+   return;
+  }
+  self.validationStatus.text=[NSString stringWithFormat:@"CAM RAW OK • %@ • SHA-256 overené",number];
+  self.validationStatus.textColor=[UIColor colorWithRed:.2 green:.9 blue:.5 alpha:1];
+  [self alert:[NSString stringWithFormat:
+   @"%@ (%@)\n7-bit ASCII • CRLF • M16 • %%\nCAM G00/G01 • RAW SHA-256: %@\n\nOverená je štruktúra programu, NIE dostupná pamäť CNC, obsadenie čísla ani bezpečnosť pohybov nástroja.",
+   name,number,digest]];
  }];
 }
 - (void)prepareQueue {
