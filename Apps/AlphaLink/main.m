@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import <CommonCrypto/CommonDigest.h>
 
 @interface CNCTurningController : UIViewController
 - (instancetype)initWithBaseURL:(NSString *)baseURL;
@@ -59,7 +60,7 @@
  [super viewDidLoad];
  self.view.backgroundColor=self.bg;self.files=[NSMutableArray array];self.projects=[NSMutableArray array];self.isoFiles=[NSMutableArray array];
  self.machineMode=0;self.pageIndex=2;self.transferBusy=NO;
- self.headerTitle=[self dashboardLabel:@"ALPHALINK CAM V1.9" size:22 color:UIColor.whiteColor];
+ self.headerTitle=[self dashboardLabel:@"ALPHALINK CAM V1.10" size:22 color:UIColor.whiteColor];
  self.headerTitle.font=[UIFont boldSystemFontOfSize:22];[self.view addSubview:self.headerTitle];
  self.piLight=[self dashboardLabel:@"● PI ODPOJENÉ" size:14 color:[UIColor colorWithRed:1 green:.58 blue:.30 alpha:1]];
  self.piLight.textAlignment=NSTextAlignmentCenter;[self.view addSubview:self.piLight];
@@ -453,6 +454,8 @@
 }
 - (void)uploadData:(NSData *)payload name:(NSString *)name {
  if(![self isReady]||self.transferBusy)return;
+ NSString *preIssue=[self camRawError:payload filename:name program:NULL];
+ if(preIssue){[self alert:[NSString stringWithFormat:@"Súbor .600 sa neodošle na Raspberry Pi: %@",preIssue]];return;}
  NSURL *url=[NSURL URLWithString:[[self base] stringByAppendingString:@"/api/upload"]];
  NSMutableURLRequest *req=[NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:45];
  req.HTTPMethod=@"POST";req.HTTPBody=payload;
@@ -516,25 +519,11 @@
 }
 - (void)prepareQueue {
  if(![self isReady]||self.transferBusy)return;
- if(!self.selected.length || self.dirty){[self alert:@"Vyber uložený program .600 bez neuložených zmien."];return;}
+ if(!self.selected.length||self.dirty){[self alert:@"Vyber uložený .600 súbor bez neuložených zmien."];return;}
  NSString *name=[self.selected copy];
- [self request:@"GET" path:[@"/api/validate?name=" stringByAppendingString:[self encodedName]] body:nil done:^(NSDictionary *j,NSError *e){
-  if(e){[self failure:j error:e];return;}
-  NSDictionary *validation=[j[@"validation"] isKindOfClass:NSDictionary.class]?j[@"validation"]:nil;
-  if(![validation[@"valid"] boolValue]){
-   [self alert:@"Súbor neprešiel kontrolou formátu na Raspberry Pi. Do fronty ho nezaradím. Pozri KONTROLA G-KÓDU."];
-   return;
-  }
-  [self request:@"POST" path:@"/api/queue/stage" body:@{@"name":name} done:^(NSDictionary *q,NSError *err){
-   if(err){[self failure:q error:err];return;}
-   NSDictionary *queue=[q[@"queue"] isKindOfClass:NSDictionary.class]?q[@"queue"]:nil;
-   if(![queue[@"name"] isEqualToString:name]||[queue[@"sha256"] length]!=64){
-    [self alert:@"Fronta nepotvrdila názov a SHA-256 súboru."];return;
-   }
-   self.queuedName=name;self.queueStatus.text=[NSString stringWithFormat:@"FRONTA PRIPRAVENÁ • %@",name];
-   self.status.text=[NSString stringWithFormat:@"%@ pripravený; zatiaľ sa nič neodoslalo.",name];
-   [self fetchTransferStatus];
-  }];
+ [self preflightCAM:name done:^(NSString *digest,NSString *number,NSString *error){
+  if(error){[self alert:[NSString stringWithFormat:@"Fronta sa nepripravila.\n%@",error]];return;}
+  [self stageCAM:name digest:digest number:number andSend:NO];
  }];
 }
 - (void)clearQueue {
@@ -551,22 +540,10 @@
 }
 - (void)sendQueued {
  if(![self isReady]||self.transferBusy)return;
- if(!self.queuedName.length){[self alert:@"Najprv priprav program .600 do fronty."];return;}
- NSString *name=[self.queuedName copy];
- UIAlertController *d=[UIAlertController alertControllerWithTitle:@"Odoslať do Alpha 400?"
-  message:[NSString stringWithFormat:@"Fronta: %@\nNa CNC nastav LOAD CAM FILE. Skontroluj program, korekcie a bezpečné pohyby nástroja. Sériový zápis NIE JE potvrdenie prijatia CNC.",name] preferredStyle:UIAlertControllerStyleAlert];
- [d addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
- [d addAction:[UIAlertAction actionWithTitle:@"ODOSLAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
-  [self request:@"POST" path:@"/api/send" body:@{@"name":name,@"force":@NO} done:^(NSDictionary *j,NSError *e){
-   if(e){[self failure:j error:e];return;}
-   if(![j[@"started"] boolValue]){[self alert:@"Server nepotvrdil spustenie."];return;}
-   self.status.text=[NSString stringWithFormat:@"Prenos %@ bol spustený na Raspberry Pi",name];
-   [self pollJob];
-  }];
- }]];
- [self presentViewController:d animated:YES completion:nil];
+ if(!self.queuedName.length){[self alert:@"Fronta je prázdna."];return;}
+ // Same exact preflight as the other send button. Never bypass by using an existing queue.
+ [self sendAlphaValidated:[self.queuedName copy]];
 }
-
 - (void)openSelected {
  if(![self isReady])return;
  if(!self.selected.length){[self alert:@"Najprv vyber program zo zoznamu."];return;}
@@ -602,69 +579,163 @@
   [self refreshFiles];
  }];
 }
-- (void)stageAndSendAlpha:(NSString *)name {
- if(self.machineMode!=2 || ![self.connectedBase isEqualToString:[self base]] || ![self.selected isEqualToString:name] || self.dirty)return;
- self.status.text=@"ALPHALINK • pripravujem prenosovú frontu...";
- [self request:@"POST" path:@"/api/queue/stage" body:@{@"name":name} done:^(NSDictionary *queued,NSError *queueError){
-  if(queueError){[self failure:queued error:queueError];return;}
-  NSDictionary *stage=[queued[@"queue"] isKindOfClass:NSDictionary.class]?queued[@"queue"]:nil;
-  NSString *stagedName=[stage[@"name"] isKindOfClass:NSString.class]?stage[@"name"]:@"";
-  NSString *digest=[stage[@"sha256"] isKindOfClass:NSString.class]?stage[@"sha256"]:@"";
-  if(![stagedName isEqualToString:name] || digest.length!=64) {
-   [self alert:@"Raspberry Pi nepotvrdilo súbor a jeho SHA-256 vo fronte. Prenos nebol spustený."];
-   return;
+// Safety gate for V34 CAM RAW .600. Parsing only: does not prove toolpath safety.
+- (NSString *)camRawError:(NSData *)bytes filename:(NSString *)name program:(NSString **)program {
+ if(![[name lowercaseString] hasSuffix:@".600"])return @"Na CAM RAW možno odoslať iba .600 súbory.";
+ if(bytes.length<40 || bytes.length>16000)return @"Na skúšobný prenos povoľujem iba .600 súbory 40 až 16 000 B. Voľná pamäť CNC sa nedá z aplikácie zistiť.";
+ const unsigned char *p=bytes.bytes;
+ for(NSUInteger i=0;i<bytes.length;i++){
+  unsigned char b=p[i];
+  if(b>127 || b==0 || (b<32 && b!=10 && b!=13))return [NSString stringWithFormat:@"Súbor obsahuje nepovolený bajt na pozícii %lu.",(unsigned long)i];
+  if(b==10 && (i==0 || p[i-1]!=13))return @"Súbor má LF bez CR. CAM RAW V34 vyžaduje čisté CRLF.";
+  if(b==13 && (i+1>=bytes.length || p[i+1]!=10))return @"Súbor má CR bez LF. CAM RAW V34 vyžaduje čisté CRLF.";
+ }
+ if(bytes.length<2 || p[bytes.length-2]!=13 || p[bytes.length-1]!=10)return @"Súbor nemá koncové CRLF.";
+ NSString *content=[[NSString alloc] initWithData:bytes encoding:NSASCIIStringEncoding];
+ if(!content)return @"Súbor nie je ASCII.";
+ NSArray *raw=[content componentsSeparatedByString:@"\r\n"];
+ NSMutableArray *lines=[NSMutableArray array];
+ for(NSString *l in raw)if(l.length)[lines addObject:l];
+ if(lines.count<5)return @"Program je príliš krátky.";
+ NSRegularExpression *header=[NSRegularExpression regularExpressionWithPattern:@"^O[0-9]{4}$" options:0 error:nil];
+ NSString *number=lines[0];
+ if([header numberOfMatchesInString:number options:0 range:NSMakeRange(0,number.length)]!=1)return @"Chýba platná hlavička O0001 (O + 4 číslice).";
+ if(![lines[1] isEqualToString:@"(AZ PS)"])return @"Chýba presná CAM hlavička (AZ PS).";
+ if(![lines[lines.count-2] isEqualToString:@"M16"] || ![lines.lastObject isEqualToString:@"%"])return @"Na konci musí byť presne M16 a %.";
+ NSInteger m16=0,pct=0;
+ for(NSString *l in lines){if([l isEqualToString:@"M16"])m16++;if([l isEqualToString:@"%"])pct++;}
+ if(m16!=1||pct!=1)return @"M16 a % sa môžu nachádzať iba raz a na konci.";
+ NSRegularExpression *motion=[NSRegularExpression regularExpressionWithPattern:@"^G0[01](?: [XZF][+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+))+$" options:0 error:nil];
+ NSInteger movementCount=0;
+ for(NSUInteger i=2;i+2<lines.count;i++){
+  NSString *line=lines[i];
+  if([motion numberOfMatchesInString:line options:0 range:NSMakeRange(0,line.length)]!=1)
+   return [NSString stringWithFormat:@"Nepodporovaný CAM príkaz na riadku %lu: %@",(unsigned long)i+1,line];
+  NSArray *parts=[line componentsSeparatedByString:@" "];
+  NSMutableSet *axis=[NSMutableSet set];BOOL displacement=NO;
+  for(NSUInteger k=1;k<parts.count;k++){
+   NSString *token=parts[k];
+   NSString *letter=[token substringToIndex:1];
+   if([axis containsObject:letter])return [NSString stringWithFormat:@"Duplicitná adresa na riadku %lu.",(unsigned long)i+1];
+   [axis addObject:letter];
+   double val=[[token substringFromIndex:1] doubleValue];
+   if(!isfinite(val))return @"V príkaze je neplatná číselná hodnota.";
+   if([letter isEqualToString:@"X"]){displacement=YES;if(val<0||val>1500)return @"X mimo bezpečnostného intervalu predbežnej kontroly."; }
+   if([letter isEqualToString:@"Z"]){displacement=YES;if(val< -3000||val>100)return @"Z mimo bezpečnostného intervalu predbežnej kontroly.";}
+   if([letter isEqualToString:@"F"] && (val<0.005||val>2.0))return @"Posuv F mimo povoleného rozsahu kontrolného profilu.";
   }
-  [self request:@"POST" path:@"/api/send" body:@{@"name":name,@"force":@NO} done:^(NSDictionary *sent,NSError *sendError){
-   if(sendError) {
-    if([sendError.domain isEqualToString:@"HTTP"] && sendError.code==409) {
-     NSMutableString *message=[NSMutableString stringWithString:@"Raspberry Pi odmietlo odoslanie ešte pred sériovým prenosom (HTTP 409)."];
-     NSString *reason=[sent[@"error"] isKindOfClass:NSString.class]?sent[@"error"]:nil;
-     if(reason.length)[message appendFormat:@"\n\n%@",reason];
-     NSDictionary *validation=[sent[@"validation"] isKindOfClass:NSDictionary.class]?sent[@"validation"]:nil;
-     NSArray *errors=[validation[@"errors"] isKindOfClass:NSArray.class]?validation[@"errors"]:@[];
-     for(id item in errors)if([item isKindOfClass:NSString.class])[message appendFormat:@"\n• %@",item];
-     [self alert:message];
-    } else [self failure:sent error:sendError];
-    self.status.text=@"ALPHALINK • prenos odmietnutý pred strojom";
-    return;
+  if(!displacement)return [NSString stringWithFormat:@"Príkaz bez pohybu X/Z na riadku %lu.",(unsigned long)i+1];
+  movementCount++;
+ }
+ if(movementCount<1)return @"V súbore nie sú obrábacie pohyby.";
+ if(program)*program=number;
+ return nil;
+}
+- (NSString *)camSHA256:(NSData *)bytes {
+ unsigned char hash[CC_SHA256_DIGEST_LENGTH];
+ CC_SHA256(bytes.bytes,(CC_LONG)bytes.length,hash);
+ NSMutableString *value=[NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH*2];
+ for(int i=0;i<CC_SHA256_DIGEST_LENGTH;i++)[value appendFormat:@"%02X",hash[i]];
+ return value;
+}
+- (void)requestCAMBytes:(NSString *)name done:(void (^)(NSData *,NSError *))done {
+ NSString *encoded=[name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+ NSURL *url=[NSURL URLWithString:[[self base] stringByAppendingFormat:@"/api/download?name=%@",encoded]];
+ if(!url){done(nil,[NSError errorWithDomain:@"AlphaLink" code:1 userInfo:@{NSLocalizedDescriptionKey:@"Neplatná adresa servera."}]);return;}
+ NSMutableURLRequest *request=[NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:20];
+ [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data,NSURLResponse *response,NSError *err){
+  NSInteger code=[response isKindOfClass:NSHTTPURLResponse.class]?((NSHTTPURLResponse *)response).statusCode:0;
+  if(!err && (code<200||code>=300))err=[NSError errorWithDomain:@"HTTP" code:code userInfo:@{NSLocalizedDescriptionKey:[NSString stringWithFormat:@"Sťahovanie RAW .600: HTTP %ld",(long)code]}];
+  dispatch_async(dispatch_get_main_queue(),^{done(data,err);});
+ }] resume];
+}
+// Read-only preflight: exact V34 profile, serial port, server file, binary SHA and strict CAM dialect.
+- (void)preflightCAM:(NSString *)name done:(void (^)(NSString *digest,NSString *number,NSString *error))done {
+ if(![self isReady] || self.transferBusy){done(nil,nil,@"Raspberry Pi je odpojené alebo prebieha prenos.");return;}
+ NSString *base=[self base];
+ [self request:@"GET" path:@"/api/status" body:nil done:^(NSDictionary *status,NSError *err){
+  if(err || ![status isKindOfClass:NSDictionary.class]){done(nil,nil,@"Raspberry Pi /api/status neodpovedá.");return;}
+  if(![base isEqualToString:[self base]]){done(nil,nil,@"Adresa servera sa počas kontroly zmenila.");return;}
+  if(![status[@"version"] isEqualToString:@"V34"] ||
+     ![status[@"profile"] isEqualToString:@"9600 / EVEN / 7 / 2 / XON-XOFF / CAM RAW"]){
+   done(nil,nil,@"Nesúhlasí server V34 alebo sériový profil. Prenos blokovaný.");return;
+  }
+  NSString *port=[status[@"serial_port"] isKindOfClass:NSString.class]?status[@"serial_port"]:@"";
+  NSArray *ports=[status[@"ports"] isKindOfClass:NSArray.class]?status[@"ports"]:@[];
+  if(!port.length || ![ports containsObject:port]){
+   done(nil,nil,@"Sériový port nie je dostupný v zozname Raspberry Pi.");return;
+  }
+  NSDictionary *transfer=[status[@"transfer"] isKindOfClass:NSDictionary.class]?status[@"transfer"]:@{};
+  if([transfer[@"sending"] boolValue] || [transfer[@"receiving"] boolValue]){
+   done(nil,nil,@"Sériový port je obsadený odosielaním alebo príjmom.");return;
+  }
+  NSString *escaped=[name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+  [self request:@"GET" path:[@"/api/file?name=" stringByAppendingString:escaped] body:nil done:^(NSDictionary *file,NSError *fileError){
+   if(fileError||![file isKindOfClass:NSDictionary.class]){done(nil,nil,@"Program .600 nemožno overiť na Raspberry Pi.");return;}
+   NSDictionary *v=[file[@"validation"] isKindOfClass:NSDictionary.class]?file[@"validation"]:nil;
+   NSString *expected=[file[@"sha256"] isKindOfClass:NSString.class]?[file[@"sha256"] uppercaseString]:@"";
+   if(![v[@"valid"] boolValue]||expected.length!=64 || ![file[@"name"] isEqualToString:name]){
+    done(nil,nil,@"Kontrola programu alebo SHA-256 na Raspberry Pi zlyhala.");return;
    }
-   if(![sent[@"started"] boolValue]){
-    [self alert:@"Server nevrátil potvrdenie started=true. Prenos sa nepovažuje za spustený."];
-    return;
-   }
-   self.status.text=[NSString stringWithFormat:@"ALPHALINK • prenos %@ spustený",name];
-   [self pollJob];
+   [self requestCAMBytes:name done:^(NSData *bytes,NSError *rawError){
+    if(rawError || !bytes){done(nil,nil,rawError.localizedDescription?:@"RAW dáta .600 sa nepodarilo stiahnuť.");return;}
+    NSString *number=nil;
+    NSString *issue=[self camRawError:bytes filename:name program:&number];
+    if(issue){done(nil,nil,issue);return;}
+    NSString *digest=[self camSHA256:bytes];
+    if(![digest isEqualToString:expected] || bytes.length!=[file[@"size"] unsignedIntegerValue]){
+     done(nil,nil,@"Súbor RAW .600 sa nezhoduje s veľkosťou alebo SHA-256 Raspberry Pi. Neodosielam.");return;
+    }
+    done(digest,number,nil);
+   }];
   }];
  }];
 }
+- (void)confirmAndSendCAM:(NSString *)name digest:(NSString *)digest number:(NSString *)number {
+ if(![self isReady]||self.transferBusy)return;
+ NSString *msg=[NSString stringWithFormat:
+  @"Program: %@ (%@)\nSHA-256 overené.\n\nNa Harrison Alpha 400:\n1. Over, že %@ NIE JE v pamäti stroja.\n2. Over voľné miesto a zálohuj uložené programy.\n3. Zvoľ CAM → LOAD CAM FILE (nie ISO READ).\n4. Stroj nesmie obrábať. Odoslanie NEPOTVRDZUJE prijatie CNC.\n\nPotvrď iba po fyzickej kontrole na stroji.",name,number,number];
+ UIAlertController *a=[UIAlertController alertControllerWithTitle:@"POSLEDNÁ KONTROLA PRED CNC" message:msg preferredStyle:UIAlertControllerStyleAlert];
+ [a addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
+ [a addAction:[UIAlertAction actionWithTitle:@"SKONTROLOVANÉ – ODOSLAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *act){
+  if(![self isReady]||self.transferBusy)return;
+  NSString *escaped=[name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+  [self request:@"GET" path:[@"/api/file?name=" stringByAppendingString:escaped] body:nil done:^(NSDictionary *f,NSError *e){
+   if(e || ![[f[@"sha256"] uppercaseString] isEqualToString:digest]){
+    [self alert:@"Súbor sa od kontroly zmenil. Prenos nie je povolený."];return;
+   }
+   [self request:@"POST" path:@"/api/send" body:@{@"name":name,@"force":@NO} done:^(NSDictionary *reply,NSError *sendError){
+    if(sendError||![reply[@"started"] boolValue]){[self failure:reply error:sendError];return;}
+    self.status.text=[NSString stringWithFormat:@"Pi V34 odosiela %@ • prijatie CNC zatiaľ NEPOTVRDENÉ",name];
+    [self pollJob];
+   }];
+  }];
+ }]];
+ [self presentViewController:a animated:YES completion:nil];
+}
+- (void)stageCAM:(NSString *)name digest:(NSString *)digest number:(NSString *)number andSend:(BOOL)send {
+ [self request:@"POST" path:@"/api/queue/stage" body:@{@"name":name} done:^(NSDictionary *response,NSError *error){
+  if(error){[self failure:response error:error];return;}
+  NSDictionary *q=[response[@"queue"] isKindOfClass:NSDictionary.class]?response[@"queue"]:nil;
+  if(![q[@"name"] isEqualToString:name] || ![[q[@"sha256"] uppercaseString] isEqualToString:digest]){
+   [self alert:@"Fronta neobsahuje overené identické RAW bajty (SHA-256). Prenos zablokovaný."];return;
+  }
+  self.queuedName=name;self.queueStatus.text=[NSString stringWithFormat:@"FRONTA OVERENÁ: %@",name];
+  self.status.text=[NSString stringWithFormat:@"%@ • overené na Pi, bez potvrdenia CNC",name];
+  [self fetchTransferStatus];
+  if(send)[self confirmAndSendCAM:name digest:digest number:number];
+ }];
+}
+
 - (void)sendAlphaValidated:(NSString *)name {
- if(self.machineMode!=2 || ![self.selected isEqualToString:name] || self.dirty)return;
- NSString *escaped=[name stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
- self.status.text=@"ALPHALINK • kontrolujem súbor .600 na Raspberry Pi...";
- [self request:@"GET" path:[@"/api/validate?name=" stringByAppendingString:escaped] body:nil done:^(NSDictionary *reply,NSError *err){
-  if(err){[self failure:reply error:err];return;}
-  NSDictionary *validation=[reply[@"validation"] isKindOfClass:NSDictionary.class]?reply[@"validation"]:nil;
-  if(!validation){[self alert:@"Server nevrátil výsledok validácie .600. Prenos je zastavený."];return;}
-  NSArray *errors=[validation[@"errors"] isKindOfClass:NSArray.class]?validation[@"errors"]:@[];
-  if(![validation[@"valid"] boolValue]){
-   NSMutableString *detail=[NSMutableString stringWithFormat:@"Program %@ neprešiel kontrolou na Raspberry Pi. Do stroja sa nič neodoslalo.",name];
-   for(id item in errors)if([item isKindOfClass:NSString.class])[detail appendFormat:@"\n• %@",item];
-   [self alert:detail];self.status.text=@"ALPHALINK • neplatný program";return;
-  }
-  NSArray *warnings=[validation[@"warnings"] isKindOfClass:NSArray.class]?validation[@"warnings"]:@[];
-  if(warnings.count){
-   NSMutableString *message=[NSMutableString stringWithString:@"Raspberry Pi našlo upozornenia formátu. Pred prenosom ich musíš skontrolovať:"];
-   for(id warning in warnings)if([warning isKindOfClass:NSString.class])[message appendFormat:@"\n• %@",warning];
-   [message appendString:@"\n\nPreniesť napriek upozorneniam?"];
-   UIAlertController *warningDialog=[UIAlertController alertControllerWithTitle:@"Kontrola CAM programu" message:message preferredStyle:UIAlertControllerStyleAlert];
-   [warningDialog addAction:[UIAlertAction actionWithTitle:@"ZRUŠIŤ" style:UIAlertActionStyleCancel handler:nil]];
-   [warningDialog addAction:[UIAlertAction actionWithTitle:@"POKRAČOVAŤ" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
-    [self stageAndSendAlpha:name];
-   }]];
-   [self presentViewController:warningDialog animated:YES completion:nil];
-   return;
-  }
-  [self stageAndSendAlpha:name];
+ if(![self isReady]||self.transferBusy||self.dirty)return;
+ self.status.text=[NSString stringWithFormat:@"BEZPEČNOSTNÁ KONTROLA • %@",name];
+ [self preflightCAM:name done:^(NSString *digest,NSString *number,NSString *error){
+  if(error){self.validationStatus.text=[NSString stringWithFormat:@"KONTROLA: %@",error];self.validationStatus.textColor=UIColor.redColor;
+   [self alert:[NSString stringWithFormat:@"Do CNC sa nič neodoslalo.\n\n%@",error]];return;}
+  self.validationStatus.text=[NSString stringWithFormat:@"OVERENÉ: %@ • SHA-256 • CAM RAW",number];
+  self.validationStatus.textColor=[UIColor colorWithRed:.3 green:1 blue:.52 alpha:1];
+  [self stageCAM:name digest:digest number:number andSend:YES];
  }];
 }
 - (void)sendSelected {
@@ -675,6 +746,7 @@
  if(mode==2 && ![[name lowercaseString] hasSuffix:@".600"]) {
    [self alert:@"Do AlphaLink CAM možno odoslať iba overený .600 program. ISO .nc používa iný režim READ a nie je v tejto verzii podporovaný."];return;
  }
+ if(mode==2){[self sendAlphaValidated:name];return;}
  NSString *prompt=(mode==2?@"ALPHA 400: na stroji nastav CAM → LOAD CAM FILE. Pred odoslaním skontroluj program .600 a pracovné podmienky.":@"NUM 1040: priprav na stroji LOAD / IN CYC. Pred odoslaním skontroluj G-kód.");
  UIAlertController *a=[UIAlertController alertControllerWithTitle:(mode==2?@"Odoslať do Harrison Alpha 400?":@"Odoslať do NUM 1040?")
  message:[NSString stringWithFormat:@"Program: %@\n%@\nPrenos vykoná Raspberry Pi.",name,prompt] preferredStyle:UIAlertControllerStyleAlert];
