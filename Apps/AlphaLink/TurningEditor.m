@@ -834,8 +834,23 @@ static NSDictionary *TNames(void){return @{@"diameter":@"STIAHNUŤ PRIEMER",@"fa
    [self showError:@"CAM generátor nevrátil hlavičku O#### / (AZ PS). Uloženie je zastavené."];
    return;
   }
+  // Pi V34 R2 provides an out-of-band revision marker in CAM preview JSON,
+  // never as a line in the machine .600 file. Do not generate NEW .600 from a
+  // legacy postprocessor after the clearance rule has been changed to X+0.4.
+  NSArray *revisionWarnings=[j[@"warnings"] isKindOfClass:NSArray.class]?j[@"warnings"]:@[];
+  BOOL piR2=NO;
+  for(id entry in revisionWarnings) {
+   if([entry isKindOfClass:NSString.class] &&
+      [(NSString *)entry rangeOfString:@"ALPHALINK_CAM_V34_R2_X04_Z02_G00"].location!=NSNotFound) {
+    piR2=YES;break;
+   }
+  }
+  if(!piR2) {
+   [self showError:@"Generátor na Raspberry Pi nepotvrdil aktualizáciu V34 R2 (X+0,4 / Z+0,2 / G00). Najprv aktualizuj SD kartu, potom znovu vygeneruj program. Do stroja sa nič neposiela."];
+   return;
+  }
   self.gcode.text=cam;self.codeName.text=TString(j[@"name"]).length?j[@"name"]:self.nameField.text;
-  self.status.text=@"CAM V34: serverový .600, G00 len na predpokladanej voľnej dráhe; skontroluj X/Z, skľučovadlo a korekcie.";
+  self.status.text=@"CAM V34 R2: X+0,4 radiálne 0,2 mm; Z+0,2; G00 len po voľnej dráhe. Skontroluj korekcie a skľučovadlo.";
   [self showTab:3];
   NSArray *warnings=[j[@"warnings"] isKindOfClass:NSArray.class]?j[@"warnings"]:@[];
   if(warnings.count) {
