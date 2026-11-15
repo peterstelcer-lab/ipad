@@ -1,12 +1,20 @@
 #import <UIKit/UIKit.h>
 #import <WebKit/WebKit.h>
+#import <MediaPlayer/MediaPlayer.h>
+#import <math.h>
 
-@interface YTController : UIViewController <WKNavigationDelegate,WKUIDelegate>
+@interface YTController : UIViewController <WKNavigationDelegate,WKUIDelegate,UIGestureRecognizerDelegate>
 @property(nonatomic,strong) WKWebView *web;
 @property(nonatomic,strong) UILabel *status;
 @property(nonatomic,strong) UIProgressView *progress;
 @property(nonatomic,strong) UIActivityIndicatorView *loading;
 @property(nonatomic,strong) UIButton *backBtn,*nextBtn;
+@property(nonatomic,strong) MPVolumeView *volumeView;
+@property(nonatomic,weak) UISlider *volumeSlider;
+@property(nonatomic,strong) UILabel *gestureHUD;
+@property(nonatomic,strong) NSMutableArray<UIPanGestureRecognizer *> *edgeGestures;
+@property(nonatomic,assign) BOOL draggingBrightness;
+@property(nonatomic,assign) CGFloat dragOriginY,dragOriginValue;
 @end
 @implementation YTController
 - (UIColor *)backgroundColor{return [UIColor colorWithRed:.035 green:.08 blue:.11 alpha:1];}
@@ -41,6 +49,7 @@
  [self.view addSubview:self.status];
  self.progress=[UIProgressView new];self.progress.progressTintColor=[self accentColor];[self.view addSubview:self.progress];
  self.loading=[[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleWhite];[self.view addSubview:self.loading];
+ [self configureEdgeControls];
  [self goHome];
 }
 - (void)viewDidLayoutSubviews {
@@ -64,6 +73,131 @@
  self.progress.frame=CGRectMake(0,topY+toolbarHeight+2,w,2);
  CGFloat webY=topY+toolbarHeight+5;
  self.web.frame=CGRectMake(0,webY,w,MAX(100,h-webY-bottom));
+}
+// Version 1.2: Vertical gestures starting in the outer 10% of the video.
+// Left: screen brightness. Right: system volume through public MPVolumeView API.
+- (void)configureEdgeControls {
+ self.edgeGestures=[NSMutableArray new];
+ self.volumeView=[[MPVolumeView alloc] initWithFrame:CGRectMake(-300,-300,180,30)];
+ self.volumeView.showsRouteButton=NO;
+ self.volumeView.showsVolumeSlider=YES;
+ [self.view addSubview:self.volumeView];
+ self.gestureHUD=[[UILabel alloc] initWithFrame:CGRectZero];
+ self.gestureHUD.backgroundColor=[UIColor colorWithWhite:0 alpha:.80];
+ self.gestureHUD.textColor=[UIColor whiteColor];
+ self.gestureHUD.font=[UIFont boldSystemFontOfSize:22];
+ self.gestureHUD.textAlignment=NSTextAlignmentCenter;
+ self.gestureHUD.layer.cornerRadius=12;
+ self.gestureHUD.clipsToBounds=YES;
+ self.gestureHUD.alpha=0;
+ self.gestureHUD.userInteractionEnabled=NO;
+ [self.view addSubview:self.gestureHUD];
+ [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(videoWindowBecameVisible:)
+    name:UIWindowDidBecomeVisibleNotification object:nil];
+}
+- (void)viewDidAppear:(BOOL)animated {
+ [super viewDidAppear:animated];
+ for(UIWindow *window in UIApplication.sharedApplication.windows) [self installEdgeGesture:window];
+}
+- (void)videoWindowBecameVisible:(NSNotification *)notification {
+ if([notification.object isKindOfClass:[UIWindow class]]) [self installEdgeGesture:notification.object];
+}
+- (void)installEdgeGesture:(UIWindow *)window {
+ if(!window || window.screen!=UIScreen.mainScreen) return;
+ NSString *windowClass=NSStringFromClass([window class]);
+ if([windowClass rangeOfString:@"Keyboard" options:NSCaseInsensitiveSearch].location!=NSNotFound ||
+    [windowClass rangeOfString:@"TextEffects" options:NSCaseInsensitiveSearch].location!=NSNotFound) return;
+ for(UIPanGestureRecognizer *g in self.edgeGestures) if(g.view==window) return;
+ UIPanGestureRecognizer *gesture=[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(handleEdgeDrag:)];
+ gesture.delegate=self;
+ gesture.maximumNumberOfTouches=1;
+ gesture.cancelsTouchesInView=YES;
+ [window addGestureRecognizer:gesture];
+ [self.edgeGestures addObject:gesture];
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
+ UIView *host=gesture.view;
+ if(!host) return NO;
+ CGPoint start=[touch locationInView:host];
+ CGFloat width=CGRectGetWidth(host.bounds);
+ CGFloat edge=MIN(95,MAX(46,width*.11));
+ // Keep our toolbar completely interactive in the regular application window.
+ if(host==self.view.window && start.y<CGRectGetMinY(self.web.frame)) return NO;
+ return start.x<=edge || start.x>=width-edge;
+}
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gesture {
+ UIPanGestureRecognizer *pan=(UIPanGestureRecognizer *)gesture;
+ CGPoint v=[pan velocityInView:gesture.view];
+ return fabs(v.y)>fabs(v.x)*1.2;
+}
+- (UISlider *)locateSlider:(UIView *)view {
+ if([view isKindOfClass:[UISlider class]]) return (UISlider *)view;
+ for(UIView *child in view.subviews) {
+  UISlider *found=[self locateSlider:child];
+  if(found) return found;
+ }
+ return nil;
+}
+- (UISlider *)systemVolumeSlider {
+ UISlider *slider=self.volumeSlider;
+ if(!slider) {
+  [self.volumeView layoutIfNeeded];
+  slider=[self locateSlider:self.volumeView];
+  self.volumeSlider=slider;
+ }
+ return slider;
+}
+- (void)displayGestureHUD:(NSString *)message inWindow:(UIWindow *)window {
+ if(!window) window=self.view.window;
+ if(!window) return;
+ if(self.gestureHUD.superview!=window) {
+  [self.gestureHUD removeFromSuperview];
+  [window addSubview:self.gestureHUD];
+ }
+ CGFloat width=MIN(290,CGRectGetWidth(window.bounds)-30);
+ self.gestureHUD.frame=CGRectMake((CGRectGetWidth(window.bounds)-width)/2,
+      (CGRectGetHeight(window.bounds)-65)/2,width,65);
+ self.gestureHUD.text=message;
+ [window bringSubviewToFront:self.gestureHUD];
+ [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideGestureHUD) object:nil];
+ self.gestureHUD.alpha=1;
+}
+- (void)hideGestureHUD {
+ [UIView animateWithDuration:.25 animations:^{ self.gestureHUD.alpha=0; }];
+}
+- (void)handleEdgeDrag:(UIPanGestureRecognizer *)pan {
+ UIWindow *window=[pan.view isKindOfClass:[UIWindow class]]?(UIWindow *)pan.view:self.view.window;
+ CGPoint point=[pan locationInView:pan.view];
+ if(pan.state==UIGestureRecognizerStateBegan) {
+  self.draggingBrightness=point.x<CGRectGetMidX(pan.view.bounds);
+  self.dragOriginY=point.y;
+  self.dragOriginValue=self.draggingBrightness?UIScreen.mainScreen.brightness:[self systemVolumeSlider].value;
+ }
+ if(pan.state==UIGestureRecognizerStateBegan || pan.state==UIGestureRecognizerStateChanged ||
+    pan.state==UIGestureRecognizerStateEnded) {
+  CGFloat span=MAX(180,CGRectGetHeight(pan.view.bounds)*.7);
+  CGFloat value=MAX(0,MIN(1,self.dragOriginValue+(self.dragOriginY-point.y)/span));
+  if(self.draggingBrightness) {
+   UIScreen.mainScreen.brightness=value;
+   [self displayGestureHUD:[NSString stringWithFormat:@"JAS  %ld %%",(long)lround(value*100)] inWindow:window];
+  } else {
+   UISlider *slider=[self systemVolumeSlider];
+   if(slider) {
+    [slider setValue:value animated:NO];
+    [slider sendActionsForControlEvents:UIControlEventValueChanged];
+    [self displayGestureHUD:[NSString stringWithFormat:@"HLASITOSŤ  %ld %%",(long)lround(value*100)] inWindow:window];
+   } else {
+    [self displayGestureHUD:@"HLASITOSŤ: nedostupná" inWindow:window];
+   }
+  }
+ }
+ if(pan.state==UIGestureRecognizerStateEnded || pan.state==UIGestureRecognizerStateCancelled ||
+    pan.state==UIGestureRecognizerStateFailed)
+  [self performSelector:@selector(hideGestureHUD) withObject:nil afterDelay:1.0];
+}
+- (void)dealloc {
+ [[NSNotificationCenter defaultCenter] removeObserver:self];
+ [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(hideGestureHUD) object:nil];
 }
 - (void)sync {
  self.backBtn.enabled=self.web.canGoBack;self.nextBtn.enabled=self.web.canGoForward;
