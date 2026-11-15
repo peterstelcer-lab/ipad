@@ -118,5 +118,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: YouTube_Web_iPad_V1_3_DEB
-          path: output/YouTube_Web_iPad_V1_2.deb
+          path: output/YouTube_Web_iPad_V1_3.deb
           retention-days: 30
