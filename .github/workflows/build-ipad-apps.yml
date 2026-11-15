@@ -27,7 +27,7 @@ jobs:
             Apps/NUM1040/main.m \
             -o build/NUM1040/Applications/NUM1040Transfer.app/NUM1040Transfer
           xcrun clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=12.0 -fobjc-arc -O2 \
-            -framework UIKit -framework WebKit -framework Foundation -framework CoreGraphics \
+            -framework UIKit -framework WebKit -framework MediaPlayer -framework Foundation -framework CoreGraphics \
             Apps/YouTube/main.m \
             -o build/YouTube/Applications/YouTubeWebiPad.app/YouTubeWebiPad
           cp Apps/AlphaLink/Info.plist build/AlphaLink/Applications/AlphaLinkiPad.app/Info.plist
@@ -90,7 +90,7 @@ jobs:
           cat > build/YouTube/DEBIAN/control <<'EOF'
           Package: sk.youtube.webipad
           Name: YouTube Web iPad
-          Version: 1.1-1
+          Version: 1.2-1
           Architecture: iphoneos-arm
           Maintainer: YouTube Web
           Section: Applications
@@ -103,7 +103,7 @@ jobs:
           chmod 755 build/YouTube/Applications/YouTubeWebiPad.app/YouTubeWebiPad
           dpkg-deb --build --root-owner-group build/AlphaLink output/AlphaLink_CAM_iPad_V1_11.deb
           dpkg-deb --build --root-owner-group build/NUM1040 output/NUM1040_Transfer_iPad_V1_1.deb
-          dpkg-deb --build --root-owner-group build/YouTube output/YouTube_Web_iPad_V1_1.deb
+          dpkg-deb --build --root-owner-group build/YouTube output/YouTube_Web_iPad_V1_2.deb
           for pkg in output/*.deb;do dpkg-deb --info "$pkg";done
       - uses: actions/upload-artifact@v4
         with:
@@ -117,6 +117,6 @@ jobs:
           retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
-          name: YouTube_Web_iPad_V1_1_DEB
-          path: output/YouTube_Web_iPad_V1_1.deb
+          name: YouTube_Web_iPad_V1_2_DEB
+          path: output/YouTube_Web_iPad_V1_2.deb
           retention-days: 30
