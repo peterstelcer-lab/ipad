@@ -1,6 +1,11 @@
 name: Build Nebula Media Player V5 for iOS 12
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'NewUtilities/NebulaMediaV5.m'
+      - '.github/workflows/build-nebula-media-v5.yml'
   push:
     branches: [main]
     paths:
